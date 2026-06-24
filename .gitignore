@@ -1,0 +1,35 @@
+## 빌드 결과물 및 임시 파일 (Output & Intermediates)
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+Concrete/
+
+## 비주얼 스튜디오 자동 생성 파일 (Visual Studio cache & files)
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+## 컴파일러가 만들어내는 임시 파일들
+*.obj
+*.ilk
+*.pdb
+*.tlog
+*.idb
+*.ipch
+*.log
+*.pfx
+*.clw
+*.cfg
+
+## 시스템 파일
+Thumbs.db
+Desktop.ini
