@@ -136,6 +136,7 @@
     <ClCompile Include="UserManager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CriticalSectionLock.h" />
     <ClInclude Include="IOCPManager.h" />
     <ClInclude Include="Myinclude.h" />
     <ClInclude Include="Session.h" />

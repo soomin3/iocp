@@ -2,6 +2,8 @@
 #include <WinSock2.h>
 #include "Myinclude.h"
 #include "Session.h"
+#include "UserManager.h"
+#include <MSWSock.h>
 
 using namespace std;
 
@@ -22,5 +24,6 @@ private:
 
 	SOCKET m_ServerSocket;
 	HANDLE m_IOCPHandle;
-	vector<unique_ptr<CSession>> m_SessionPool;
+	vector<shared_ptr<CSession>> m_SessionPool;
+	CUserManager m_UserManager;
 };

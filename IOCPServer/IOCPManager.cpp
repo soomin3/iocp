@@ -26,9 +26,36 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 		if (OverLappedData->ioType == EIO_TYPE::ACCEPT)
 		{
 			cout << "Client Connect\n";
+			int32_t SessionIndex = OverLappedData->SessionIndex;
 
+			shared_ptr<CUser> user = m_UserManager.PopUser();
 			setsockopt(OverLappedData->ClientSocket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&m_ServerSocket, sizeof(m_ServerSocket));
-			CreateIoCompletionPort((HANDLE)OverLappedData->ClientSocket, _iocpHandle, 0, 0);
+			CreateIoCompletionPort((HANDLE)OverLappedData->ClientSocket, _iocpHandle, (ULONG_PTR)user.get(), 0);
+
+			m_SessionPool[SessionIndex]->PostRead(SessionIndex);
+		}
+		else if (OverLappedData->ioType == EIO_TYPE::READ)
+		{
+			cout << "Read Complete\n";
+
+			if (CompletionKey == 0)
+				continue;
+
+			int32_t SessionIndex = OverLappedData->SessionIndex;
+
+			CUser* RawUser = reinterpret_cast<CUser*>(CompletionKey);
+			shared_ptr<CUser> user = RawUser->shared_from_this();
+
+			m_SessionPool[SessionIndex]->PrintReadBuffer();
+			m_SessionPool[SessionIndex]->PostRead(SessionIndex);
+		}
+		else if (OverLappedData->ioType == EIO_TYPE::WRITE)
+		{
+			cout << "Write Complete\n";
+		}
+		else
+		{
+			printf("Unknown IO Type\n");
 		}
 	}
 }
@@ -85,22 +112,13 @@ void CIOCPManager::Init()
 
 	CreateIoCompletionPort((HANDLE)m_ServerSocket, m_IOCPHandle, 0, 0);
 
+	m_UserManager.Init();
+
 	m_SessionPool.reserve(USER_SIZE);
-	//m_AcceptSockPool.reserve(ACCEPT_SOCK_SIZE);
 	for (int32_t i = 0; i < USER_SIZE; ++i)
 	{
-		unique_ptr<CSession> Session = make_unique<CSession>();
-		Session->Init();
-		m_SessionPool.push_back(move(Session));
-		//m_AcceptSockPool.push_back(WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED));
+		m_SessionPool.push_back(make_shared<CSession>());
 	}
-
-	//int32_t MaxOverlappedCount = ACCEPT_SOCK_SIZE * 3;
-	//m_OverlappedPool.reserve(MaxOverlappedCount);
-	//for (int32_t i = 0; i < MaxOverlappedCount; ++i)
-	//{
-	//	m_OverlappedPool.push_back(make_unique<SMyOverlapped>());
-	//}
 }
 
 void CIOCPManager::Run()
@@ -124,6 +142,7 @@ void CIOCPManager::Run()
 
 	//SOCKET ClientSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	DWORD ReceiveSize = 0;
+
 	for (int32_t i = 0; i < USER_SIZE; ++i)
 	{
 		/*SMyOverlapped* AcceptOverlapped = m_OverlappedPool[i].get();
@@ -131,7 +150,7 @@ void CIOCPManager::Run()
 		AcceptOverlapped->ClientSocket = m_AcceptSockPool[i];
 
 		BOOL AcceptResult = g_AcceptEx(m_ServerSocket, m_AcceptSockPool[i], AcceptOverlapped->RecvBuffer, 0, AddrSize, AddrSize, &ReceiveSize, (LPOVERLAPPED)AcceptOverlapped);*/
-		bool AcceptResult = m_SessionPool[i]->PostAccept(m_ServerSocket);
+		bool AcceptResult = m_SessionPool[i]->PostAccept(m_ServerSocket, i);
 		if (AcceptResult == false && WSAGetLastError() != WSA_IO_PENDING)
 		{
 			printf("accept error: %d\n", WSAGetLastError());

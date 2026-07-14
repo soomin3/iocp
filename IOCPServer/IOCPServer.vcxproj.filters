@@ -50,5 +50,8 @@
     <ClInclude Include="UserManager.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="CriticalSectionLock.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
