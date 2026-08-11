@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "User.h"
 
 //CUser::CUser(int32_t _UserID)

@@ -30,6 +30,18 @@
     <ClCompile Include="UserManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PacketManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DBManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="StoredProcedure.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Myinclude.h">
@@ -51,6 +63,21 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="CriticalSectionLock.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Packet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PacketManager.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DBManager.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="StoredProcedure.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

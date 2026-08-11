@@ -1,9 +1,8 @@
 #pragma once
-#include <WinSock2.h>
-#include "Myinclude.h"
 #include "Session.h"
-#include "UserManager.h"
-#include <MSWSock.h>
+#include <vector>
+
+class CPacketManager;
 
 using namespace std;
 
@@ -14,6 +13,9 @@ extern LPFN_ACCEPTEX g_AcceptEx;
 class CIOCPManager
 {
 public:
+	CIOCPManager();
+	~CIOCPManager();
+
 	void Init();
 	void Run();
 	void Release();
@@ -22,8 +24,11 @@ private:
 	void WorkerThread(HANDLE _iocpHandle);
 	void InitAcceptEx(SOCKET _ListenSoceket);
 
+	void DisconnectSession(CSession* _Session);
+
 	SOCKET m_ServerSocket;
 	HANDLE m_IOCPHandle;
 	vector<shared_ptr<CSession>> m_SessionPool;
-	CUserManager m_UserManager;
+	unique_ptr<CPacketManager> m_PacketManager;
+	//CUserManager m_UserManager;
 };

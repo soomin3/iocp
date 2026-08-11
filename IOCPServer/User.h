@@ -6,7 +6,7 @@ using namespace std;
 class CUser : public enable_shared_from_this<CUser>
 {
 public:
-	//CUser() : m_UserID(-1), m_Session(make_unique<CSession>()) {}
+	CUser() : m_UserID(0) {}
 	//CUser(int32_t _UserID);
 	//~CUser() = default;
 

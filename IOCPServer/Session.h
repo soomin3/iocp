@@ -4,6 +4,8 @@
 #include <MSWSock.h>
 
 using namespace std;
+class CSession;
+class CPacketManager;
 
 enum class EIO_TYPE : uint8_t
 {
@@ -12,28 +14,50 @@ enum class EIO_TYPE : uint8_t
 	WRITE
 };
 
+enum class ESessionState : uint8_t
+{
+	DISCONNECTED,
+	ACCEPTING,
+	CONNECTED,
+	DISCONNECTING,
+};
+
 struct SMyOverlapped
 {
 	WSAOVERLAPPED Overlapped;
 	EIO_TYPE ioType;
-	SOCKET ClientSocket;
-	int32_t SessionIndex;
+	CSession* owner;
 };
 
 class CSession
 {
 public:
 	CSession();
-	~CSession() = default;
+	~CSession();
+
+	SOCKET GetSocket() const { return m_Socket; }
+
 	void Init();
+	void Disconnect();
 	void Release();
-	bool PostAccept(SOCKET _ListenSocket, int32_t _SessionIndex);
-	bool PostRead(int32_t _SessionIndex);
+	bool TryReset();
+	bool PostAccept(SOCKET _ListenSocket);
+	bool PostRead();
+	bool CompleteAccept();
+
+	bool Send(const void* _Data, size_t _Size);
+	bool PostWrite();
+	bool OnSend(DWORD _TransferredBytes);
+
+	bool OnRecv(DWORD _TransferredBytes, CPacketManager* _PacketManager);
+
+	int32_t CompleteIO();
 
 	void PrintReadBuffer()
 	{
 		cout << "Read Buffer: " << m_ReadBuffer << endl;
 	}
+
 private:
 	SOCKET m_Socket;
 
@@ -43,4 +67,16 @@ private:
 
 	char m_AcceptBuffer[64];
 	char m_ReadBuffer[1024];
+
+	DWORD m_ReceivedBytes;
+
+	atomic_int32_t m_PendingIOCount;
+
+	CRITICAL_SECTION m_StateLock;
+	ESessionState m_State;
+
+	CRITICAL_SECTION m_SendLock;
+	deque<vector<char>> m_SendQueue;
+	size_t m_SendOffset;
+	bool m_IsSending;
 };
