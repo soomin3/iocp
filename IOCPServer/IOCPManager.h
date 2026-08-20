@@ -2,8 +2,6 @@
 #include "Session.h"
 #include <vector>
 
-class CPacketManager;
-
 using namespace std;
 
 #define USER_SIZE 100
@@ -13,10 +11,10 @@ extern LPFN_ACCEPTEX g_AcceptEx;
 class CIOCPManager
 {
 public:
-	CIOCPManager();
+	explicit CIOCPManager(CPacketDispatcher& _PacketDispatcher);
 	~CIOCPManager();
 
-	void Init();
+	bool Init();
 	void Run();
 	void Release();
 
@@ -25,10 +23,14 @@ private:
 	void InitAcceptEx(SOCKET _ListenSoceket);
 
 	void DisconnectSession(CSession* _Session);
+	void StopWorkerThreads();
 
 	SOCKET m_ServerSocket;
 	HANDLE m_IOCPHandle;
 	vector<shared_ptr<CSession>> m_SessionPool;
-	unique_ptr<CPacketManager> m_PacketManager;
+	CPacketDispatcher& m_PacketDispatcher;
+
+	atomic_bool m_IsRunning;
+	vector<thread> m_WorkerThreads;
 	//CUserManager m_UserManager;
 };

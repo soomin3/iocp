@@ -1,11 +1,10 @@
 #pragma once
 #include <WinSock2.h>
-#include "Myinclude.h"
 #include <MSWSock.h>
 
 using namespace std;
 class CSession;
-class CPacketManager;
+class CPacketDispatcher;
 
 enum class EIO_TYPE : uint8_t
 {
@@ -32,7 +31,7 @@ struct SMyOverlapped
 class CSession
 {
 public:
-	CSession();
+	explicit CSession(const CPacketDispatcher& _PacketDispatcher);
 	~CSession();
 
 	SOCKET GetSocket() const { return m_Socket; }
@@ -49,9 +48,10 @@ public:
 	bool PostWrite();
 	bool OnSend(DWORD _TransferredBytes);
 
-	bool OnRecv(DWORD _TransferredBytes, CPacketManager* _PacketManager);
+	bool OnRecv(DWORD _TransferredBytes);
 
 	int32_t CompleteIO();
+	void WaitForPendingIO();
 
 	void PrintReadBuffer()
 	{
@@ -79,4 +79,8 @@ private:
 	deque<vector<char>> m_SendQueue;
 	size_t m_SendOffset;
 	bool m_IsSending;
+	CRITICAL_SECTION m_PendingIOLock;
+	CONDITION_VARIABLE m_PendingIOCCondition;
+
+	const CPacketDispatcher& m_PacketDispatcher;
 };

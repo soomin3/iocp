@@ -13,3 +13,7 @@
 #include <deque>
 #include <thread>
 #include <cassert>
+#include <array>
+
+#include "Packet.h"
+#include "Session.h"

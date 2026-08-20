@@ -1,5 +1,4 @@
 #pragma once
-#include"Myinclude.h"
 
 using namespace std;
 

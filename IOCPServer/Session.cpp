@@ -1,15 +1,18 @@
 #include "pch.h"
 #include "Session.h"
 #include "Packet.h"
-#include "PacketManager.h"
+#include "PacketDispatcher.h"
 #include "CriticalSectionLock.h"
 
 extern LPFN_ACCEPTEX g_AcceptEx;
 
-CSession::CSession() : m_Socket(INVALID_SOCKET), m_ReceivedBytes(0), m_PendingIOCount(0), m_State(ESessionState::DISCONNECTED), m_SendOffset(0), m_IsSending(false)
+CSession::CSession(const CPacketDispatcher& _PacketDispatcher) : m_PacketDispatcher(_PacketDispatcher), m_Socket(INVALID_SOCKET), m_ReceivedBytes(0), m_PendingIOCount(0), m_State(ESessionState::DISCONNECTED), m_SendOffset(0), m_IsSending(false)
 {
 	InitializeCriticalSection(&m_StateLock);
 	InitializeCriticalSection(&m_SendLock);
+	InitializeCriticalSection(&m_PendingIOLock);
+
+	InitializeConditionVariable(&m_PendingIOCCondition);
 
 	//m_Socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
@@ -34,6 +37,7 @@ CSession::~CSession()
 	assert(m_PendingIOCount.load() == 0);
 	DeleteCriticalSection(&m_StateLock);
 	DeleteCriticalSection(&m_SendLock);
+	DeleteCriticalSection(&m_PendingIOLock);
 }
 
 void CSession::Init()
@@ -309,7 +313,7 @@ bool CSession::OnSend(DWORD _TransferredBytes)
 	return !NextPostSend || PostWrite();
 }
 
-bool CSession::OnRecv(DWORD _TransferredBytes, CPacketManager* _PacketManager)
+bool CSession::OnRecv(DWORD _TransferredBytes)
 {
 	const size_t FreeBytes = sizeof(m_ReadBuffer) - m_ReceivedBytes;
 
@@ -341,7 +345,7 @@ bool CSession::OnRecv(DWORD _TransferredBytes, CPacketManager* _PacketManager)
 			break;
 		}
 
-		if (_PacketManager->ProcessPacket(*this, m_ReadBuffer + bytesProcessed, header) == false)
+		if (!m_PacketDispatcher.Dispatch(*this, m_ReadBuffer + bytesProcessed, header))
 		{
 			return false;
 		}
@@ -362,5 +366,21 @@ int32_t CSession::CompleteIO()
 
 	assert(PreviousCount > 0);
 
+	const int32_t RemainingCount = PreviousCount - 1;
+	if(RemainingCount == 0)
+	{
+		CCSLock Lock(&m_PendingIOLock);
+		WakeAllConditionVariable(&m_PendingIOCCondition);
+	}
+
 	return PreviousCount - 1;
+}
+
+void CSession::WaitForPendingIO()
+{
+	CCSLock Lock(&m_PendingIOLock);
+	while (m_PendingIOCount.load() != 0)
+	{
+		SleepConditionVariableCS(&m_PendingIOCCondition, &m_PendingIOLock, INFINITE);
+	}
 }

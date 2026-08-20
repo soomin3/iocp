@@ -1,6 +1,10 @@
 #include "pch.h"
 #include "IOCPManager.h"
-#include "PacketManager.h"
+
+namespace
+{
+	constexpr ULONG_PTR IOCP_SHUTDOWN_KEY = 1;
+}
 
 LPFN_ACCEPTEX g_AcceptEx = nullptr;
 
@@ -16,6 +20,11 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 
 		if (OverLapped == nullptr)
 		{
+			if (CompletionKey == IOCP_SHUTDOWN_KEY)
+			{
+				break;
+			}
+
 			continue;
 		}
 
@@ -27,17 +36,13 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 		if (!success)
 		{
 			DisconnectSession(Session);
-			//Session->Release();
-			//Session->PostAccept(m_ServerSocket);
 			continue;
 		}
 
 		if (OverLappedData->ioType == EIO_TYPE::ACCEPT)
 		{
 			cout << "Client Connect\n";
-			//int32_t SessionIndex = OverLappedData->SessionIndex;
-			//CSession* Session = m_SessionPool[SessionIndex].get();
-			//shared_ptr<CUser> user = m_UserManager.PopUser();
+
 			if (setsockopt(Session->GetSocket(), SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&m_ServerSocket, sizeof(m_ServerSocket)) != 0)
 			{
 				cout << "setsockopt error: " << WSAGetLastError() << '\n';
@@ -59,31 +64,22 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 		else if (OverLappedData->ioType == EIO_TYPE::READ)
 		{
 			//cout << "Read Complete\n";
-			//int32_t SessionIndex = OverLappedData->SessionIndex;
 
 			if (Transferred == 0) //클라이언트 종료
 			{
 				DisconnectSession(Session);
-				//Session->Release();
-				//cout << "Client Disconnected\n";
-				//Session->PostAccept(m_ServerSocket);
 				continue;
 			}
 
-			//m_SessionPool[SessionIndex]->PrintReadBuffer();
-			if (Session->OnRecv(Transferred, m_PacketManager.get()) == false)
+			if (Session->OnRecv(Transferred) == false)
 			{
 				DisconnectSession(Session);
-				//Session->Release();
-				//Session->PostAccept(m_ServerSocket);
 				continue;
 			}
 
 			if (Session->PostRead() == false)
 			{
 				DisconnectSession(Session);
-				//Session->Release();
-				//Session->PostAccept(m_ServerSocket);
 				continue;
 			}
 		}
@@ -124,30 +120,49 @@ void CIOCPManager::DisconnectSession(CSession* _Session)
 	}
 }
 
-CIOCPManager::CIOCPManager()
+void CIOCPManager::StopWorkerThreads()
 {
-	m_PacketManager = make_unique<CPacketManager>();
+	m_IsRunning.store(false);
+
+	for(size_t i = 0; i < m_WorkerThreads.size(); ++i)
+	{
+		PostQueuedCompletionStatus(m_IOCPHandle, 0, IOCP_SHUTDOWN_KEY, nullptr);
+	}
+
+	for(auto& thread : m_WorkerThreads)
+	{
+		if (thread.joinable())
+		{
+			thread.join();
+		}
+	}
+
+	m_WorkerThreads.clear();
+}
+
+CIOCPManager::CIOCPManager(CPacketDispatcher& _PacketDispatcher) : m_PacketDispatcher(_PacketDispatcher), m_IsRunning(false)
+{
 }
 
 CIOCPManager::~CIOCPManager()
 {
 }
 
-void CIOCPManager::Init()
+bool CIOCPManager::Init()
 {
 	WSADATA WsaData;
 	int32_t WsaResult = WSAStartup(MAKEWORD(2, 2), &WsaData);
 	if (WsaResult != 0)
 	{
 		printf("WSAStartup error: %d\n", WsaResult);
-		return;
+		return false;
 	}
 
 	m_ServerSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	if (m_ServerSocket == INVALID_SOCKET)
 	{
 		printf("socket error: %d\n", WSAGetLastError());
-		return;
+		return false;
 	}
 
 	InitAcceptEx(m_ServerSocket);
@@ -159,62 +174,52 @@ void CIOCPManager::Init()
 	if (bind(m_ServerSocket, (sockaddr*)&ServerAddr, sizeof(sockaddr)) != 0)
 	{
 		printf("bind error: %d\n", WSAGetLastError());
-		return;
+		return false;
 	}
 
 	if (listen(m_ServerSocket, 5) == SOCKET_ERROR)
 	{
 		printf("listen error: %d\n", WSAGetLastError());
-		return;
+		return false;
 	}
 
 	m_IOCPHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0);
 	if (!m_IOCPHandle)
 	{
 		printf("CreateIoCompletionPort error: %d\n", GetLastError());
-		return;
+		return false;
 	}
 
 	CreateIoCompletionPort((HANDLE)m_ServerSocket, m_IOCPHandle, 0, 0);
 
-	//m_UserManager.Init();
-
 	m_SessionPool.reserve(USER_SIZE);
 	for (int32_t i = 0; i < USER_SIZE; ++i)
 	{
-		m_SessionPool.push_back(make_shared<CSession>());
+		m_SessionPool.push_back(make_shared<CSession>(m_PacketDispatcher));
 	}
+
+	return true;
 }
 
 void CIOCPManager::Run()
 {
-	vector<thread> workerThreads;
+	m_IsRunning.store(true);
+
 	uint32_t ThreadCount = thread::hardware_concurrency() * 2;
+	ThreadCount = ThreadCount == 0 ? 4 : ThreadCount;
 
 	for (uint32_t i = 0; i < ThreadCount; ++i)
 	{
-		workerThreads.emplace_back([this]()
+		m_WorkerThreads.emplace_back([this]()
 		{
 			WorkerThread(m_IOCPHandle);
 		});
 	}
 
-	//sockaddr_in ClientAddr = {};
-	//int32_t ClientAddrSize = sizeof(ClientAddr);
-
-	//const int32_t DataSize = 1024;
-	//const int32_t AddrSize = sizeof(sockaddr_in) + 16;
-
-	//SOCKET ClientSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	DWORD ReceiveSize = 0;
 
 	for (int32_t i = 0; i < USER_SIZE; ++i)
 	{
-		/*SMyOverlapped* AcceptOverlapped = m_OverlappedPool[i].get();
-		AcceptOverlapped->ioType = EIO_TYPE::ACCEPT;
-		AcceptOverlapped->ClientSocket = m_AcceptSockPool[i];
-
-		BOOL AcceptResult = g_AcceptEx(m_ServerSocket, m_AcceptSockPool[i], AcceptOverlapped->RecvBuffer, 0, AddrSize, AddrSize, &ReceiveSize, (LPOVERLAPPED)AcceptOverlapped);*/
 		bool AcceptResult = m_SessionPool[i]->PostAccept(m_ServerSocket);
 		if (AcceptResult == false && WSAGetLastError() != WSA_IO_PENDING)
 		{

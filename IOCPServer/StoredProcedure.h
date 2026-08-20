@@ -1,5 +1,4 @@
 #pragma once
-#include "Myinclude.h"
 #include <sql.h>
 #include <sqlext.h>
 

@@ -30,9 +30,6 @@
     <ClCompile Include="UserManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PacketManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="DBManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -41,6 +38,15 @@
     </ClCompile>
     <ClCompile Include="pch.cpp">
       <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Server.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PacketDispatcher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AuthHandlers.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -68,9 +74,6 @@
     <ClInclude Include="Packet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="PacketManager.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="DBManager.h">
       <Filter>Source Files</Filter>
     </ClInclude>
@@ -80,5 +83,19 @@
     <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="PacketDispatcher.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="AuthHandlers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Server.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="PacketList.inc">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -1,11 +1,16 @@
 #pragma once
-#include "Myinclude.h"
 
 enum class PacketID : uint16_t
 {
 	ID_NULL = 0,
-	CS_LOGIN_REQ = 1,
-	SC_LOGIN_RES = 2,
+
+#define CS_PACKET(name) name,
+#define SC_PACKET(name) name,
+#include "PacketList.inc"
+#undef CS_PACKET
+#undef SC_PACKET
+	
+	ID_MAX
 };
 
 struct PacketHeader
