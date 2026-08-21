@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Server.h"
+#include "AuthHandlers.h"
 
 CServer::CServer() : m_IOCPManager(m_PacketDispatcher)
 {
@@ -24,7 +25,20 @@ bool CServer::Init()
 	}
 	cout << "SQL Server Connect Success" << endl;
 
-	m_PacketDispatcher.RegisterAllHandlers();
+	if(!m_DBManager.StartWorker())
+	{
+		cout << "SQL Server Start Worker Failed" << endl;
+		return false;
+	}
+	cout << "SQL Server Start Worker Success" << endl;
+
+	if (!RegisterAuthHandlers(m_PacketDispatcher, m_DBManager))
+	{
+		cout << "Auth Handler Register Failed" << endl;
+		return false;
+	}
+
+	cout << "Auth Handler Register Success" << endl;
 
 	if (!m_IOCPManager.Init())
 	{
@@ -44,6 +58,7 @@ void CServer::Run()
 	ConsoleThread.join();
 
 	m_IOCPManager.Stop();
+	m_DBManager.StopWorker();
 	m_IOCPManager.Release();
 }
 

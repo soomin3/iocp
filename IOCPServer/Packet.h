@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdint>
+#include <cstring>
 
 enum class PacketID : uint16_t
 {

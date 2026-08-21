@@ -1,6 +1,16 @@
 #pragma once
-#include "Session.h"
+#include <WinSock2.h>
+#include <MSWSock.h>
+#include <Windows.h>
+
+#include <atomic>
+#include <memory>
+#include <thread>
 #include <vector>
+
+#include "Session.h"
+
+class CPacketDispatcher;
 
 using namespace std;
 

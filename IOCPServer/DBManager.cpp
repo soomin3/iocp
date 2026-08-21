@@ -1,13 +1,18 @@
 #include "pch.h"
 #include "DBManager.h"
+#include "AuthProcedures.h"
 
-CDBManager::CDBManager() : m_EnvironmentHandle(SQL_NULL_HENV), m_ConnectionHandle(SQL_NULL_HDBC), m_IsConnected(false)
+CDBManager::CDBManager() : m_EnvironmentHandle(SQL_NULL_HENV), m_ConnectionHandle(SQL_NULL_HDBC), m_IsConnected(false), m_StopRequested(false)
 {
+	InitializeCriticalSection(&m_JobLock);
+	InitializeConditionVariable(&m_JobCondition);
 }
 
 CDBManager::~CDBManager()
 {
+	StopWorker();
 	Release();
+	DeleteCriticalSection(&m_JobLock);
 }
 
 bool CDBManager::Init()
@@ -81,4 +86,104 @@ void CDBManager::Disconnect()
 		SQLDisconnect(m_ConnectionHandle);
 		m_IsConnected = false;
 	}
+}
+
+bool CDBManager::StartWorker()
+{
+	if (m_WorkerThread.joinable())
+	{
+		return false;
+	}
+
+	{
+		CCSLock lock(&m_JobLock);
+		m_StopRequested = false;
+	}
+
+	m_WorkerThread = thread(&CDBManager::WorkerThread, this);
+	return true;
+}
+
+bool CDBManager::Enqueue(DBJob _Job)
+{
+	if (!_Job)
+	{
+		return false;
+	}
+
+	{
+		CCSLock lock(&m_JobLock);
+
+		if (m_StopRequested)
+		{
+			return false;
+		}
+
+		m_JobQueue.push(move(_Job));
+		WakeConditionVariable(&m_JobCondition);
+	}
+
+	return true;
+}
+
+void CDBManager::StopWorker()
+{
+	{
+		CCSLock lock(&m_JobLock);
+		m_StopRequested = true;
+		WakeAllConditionVariable(&m_JobCondition);
+	}
+
+	if (m_WorkerThread.joinable())
+	{
+		m_WorkerThread.join();
+	}
+}
+
+void CDBManager::WorkerThread()
+{
+	while (true)
+	{
+		DBJob Job;
+		{
+			CCSLock lock(&m_JobLock);
+
+			while(m_JobQueue.empty() && !m_StopRequested)
+			{
+				SleepConditionVariableCS(&m_JobCondition, &m_JobLock, INFINITE);
+			}
+
+			if (m_StopRequested && m_JobQueue.empty())
+			{
+				return;
+			}
+
+			Job = move(m_JobQueue.front());
+			m_JobQueue.pop();
+		}
+
+		Job();
+	}
+}
+
+bool CDBManager::AuthenticateAsync(string _ID, string _PW, ProcCallback _Callback)
+{
+	if (!_Callback)
+	{
+		return false;
+	}
+
+	return Enqueue([this, ID = move(_ID), PW = move(_PW), Callback = move(_Callback)]() mutable
+		{
+			SLoginProcedureResult Result = ExecuteLoginProcedure(ID, PW);
+
+			Callback(move(Result));
+		});
+}
+
+SLoginProcedureResult CDBManager::ExecuteLoginProcedure(string& _ID, string& _PW)
+{
+	CProcedure_UserLogin proc;
+
+	return proc.Execute(m_ConnectionHandle, _ID, _PW);
 }

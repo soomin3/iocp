@@ -1,6 +1,13 @@
 #pragma once
 #include <WinSock2.h>
-#include <MSWSock.h>
+#include <Windows.h>
+
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <deque>
+#include <iostream>
+#include <vector>
 
 using namespace std;
 class CSession;
@@ -38,6 +45,7 @@ public:
 	int32_t GetPendingIOCount() const { return m_PendingIOCount.load(); }
 
 	ESessionState GetState();
+	uint64_t GetGeneration();
 
 	void Init();
 	void Disconnect();
@@ -47,7 +55,7 @@ public:
 	bool PostRead();
 	bool CompleteAccept();
 
-	bool Send(const void* _Data, size_t _Size);
+	bool Send(const void* _Data, size_t _Size, uint64_t _Generation);
 	bool PostWrite();
 	bool OnSend(DWORD _TransferredBytes);
 
@@ -77,6 +85,7 @@ private:
 
 	CRITICAL_SECTION m_StateLock;
 	ESessionState m_State;
+	uint64_t m_Generation;
 
 	CRITICAL_SECTION m_SendLock;
 	deque<vector<char>> m_SendQueue;

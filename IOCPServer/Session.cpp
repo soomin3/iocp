@@ -2,11 +2,18 @@
 #include "Session.h"
 #include "Packet.h"
 #include "PacketDispatcher.h"
-#include "CriticalSectionLock.h"
 
 extern LPFN_ACCEPTEX g_AcceptEx;
 
-CSession::CSession(const CPacketDispatcher& _PacketDispatcher) : m_PacketDispatcher(_PacketDispatcher), m_Socket(INVALID_SOCKET), m_ReceivedBytes(0), m_PendingIOCount(0), m_State(ESessionState::DISCONNECTED), m_SendOffset(0), m_IsSending(false)
+CSession::CSession(const CPacketDispatcher& _PacketDispatcher) :
+	m_PacketDispatcher(_PacketDispatcher),
+	m_Socket(INVALID_SOCKET),
+	m_ReceivedBytes(0),
+	m_PendingIOCount(0),
+	m_State(ESessionState::DISCONNECTED),
+	m_SendOffset(0),
+	m_IsSending(false),
+	m_Generation(0)
 {
 	InitializeCriticalSection(&m_StateLock);
 	InitializeCriticalSection(&m_SendLock);
@@ -44,6 +51,12 @@ ESessionState CSession::GetState()
 {
 	CCSLock Lock(&m_StateLock);
 	return m_State;
+}
+
+uint64_t CSession::GetGeneration()
+{
+	CCSLock Lock(&m_StateLock);
+	return m_Generation;
 }
 
 void CSession::Init()
@@ -197,12 +210,13 @@ bool CSession::CompleteAccept()
 		return false;
 	}
 
+	++m_Generation;
 	m_State = ESessionState::CONNECTED;
 
 	return true;
 }
 
-bool CSession::Send(const void* _Data, size_t _Size)
+bool CSession::Send(const void* _Data, size_t _Size, uint64_t _Generation)
 {
 	if (_Data == nullptr || _Size == 0)
 	{
@@ -214,7 +228,7 @@ bool CSession::Send(const void* _Data, size_t _Size)
 	//임계 영역 구분
 	{
 		CCSLock StateLock(&m_StateLock);
-		if (m_State != ESessionState::CONNECTED)
+		if (m_State != ESessionState::CONNECTED || m_Generation != _Generation)
 		{
 			return false;
 		}

@@ -1,4 +1,10 @@
 #pragma once
+#include <WinSock2.h>
+#include <Windows.h>
+#include <cstdint>
+#include <memory>
+#include <queue>
+#include <unordered_map>
 #include "User.h"
 
 #define USER_SIZE 100

@@ -1,6 +1,10 @@
 #include "pch.h"
 #include "StoredProcedure.h"
 
+CStoredProcedure::CStoredProcedure()
+{
+}
+
 void CStoredProcedure::Init()
 {
 	//SQLRETURN Result = SQLAllocHandle(SQL_HANDLE_STMT, SQL_NULL_HDBC, &m_StatementHandle);

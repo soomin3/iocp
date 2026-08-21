@@ -1,2 +1,3 @@
+#pragma once
 CS_PACKET(CS_LOGIN_REQ)
 SC_PACKET(SC_LOGIN_RES)

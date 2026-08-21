@@ -205,7 +205,7 @@ bool CIOCPManager::Init()
 	ServerAddr.sin_family = AF_INET;
 	ServerAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	ServerAddr.sin_port = htons(8694);
-	if (bind(m_ServerSocket, (sockaddr*)&ServerAddr, sizeof(sockaddr)) != 0)
+	if (::bind(m_ServerSocket, (sockaddr*)&ServerAddr, sizeof(sockaddr)) != 0)
 	{
 		printf("bind error: %d\n", WSAGetLastError());
 		return false;
