@@ -14,6 +14,7 @@
 #include <thread>
 #include <cassert>
 #include <array>
+#include <string>
 
 #include "Packet.h"
 #include "Session.h"

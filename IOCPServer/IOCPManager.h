@@ -16,12 +16,17 @@ public:
 
 	bool Init();
 	void Run();
+	void Stop();
 	void Release();
+
+	void PrintStatus();
 
 private:
 	void WorkerThread(HANDLE _iocpHandle);
 	void InitAcceptEx(SOCKET _ListenSoceket);
 
+	bool ProcessCompletion(CSession* _Session, DWORD _TransferredBytes, EIO_TYPE _IOType);
+	void TryRecycleSession(CSession* _Session);
 	void DisconnectSession(CSession* _Session);
 	void StopWorkerThreads();
 

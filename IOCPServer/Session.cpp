@@ -40,6 +40,12 @@ CSession::~CSession()
 	DeleteCriticalSection(&m_PendingIOLock);
 }
 
+ESessionState CSession::GetState()
+{
+	CCSLock Lock(&m_StateLock);
+	return m_State;
+}
+
 void CSession::Init()
 {
 }
@@ -373,7 +379,7 @@ int32_t CSession::CompleteIO()
 		WakeAllConditionVariable(&m_PendingIOCCondition);
 	}
 
-	return PreviousCount - 1;
+	return RemainingCount;
 }
 
 void CSession::WaitForPendingIO()

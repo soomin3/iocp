@@ -39,4 +39,39 @@ bool CServer::Init()
 void CServer::Run()
 {
 	m_IOCPManager.Run();
+
+	thread ConsoleThread(&CServer::ProcessConsoleCommand, this);
+	ConsoleThread.join();
+
+	m_IOCPManager.Stop();
+	m_IOCPManager.Release();
+}
+
+void CServer::ProcessConsoleCommand()
+{
+	cout << "Commands : help, quit, status\n";
+
+	string Command;
+
+	while (getline(cin, Command))
+	{
+		if (Command == "help")
+		{
+			cout << "help - Show commands\n"
+				<< "quit - Stop server\n"
+				<< "status - Show server status\n";
+		}
+		else if (Command == "quit")
+		{
+			return;
+		}
+		else if (Command == "status")
+		{
+			m_IOCPManager.PrintStatus();
+		}
+		else if (!Command.empty())
+		{
+			cout << "Unknown command: " << Command << '\n';
+		}
+	}
 }

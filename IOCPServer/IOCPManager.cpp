@@ -31,71 +31,15 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 		SMyOverlapped* OverLappedData = reinterpret_cast<SMyOverlapped*>(OverLapped);
 		CSession* Session = OverLappedData->owner;
 
+		bool keepConnected = success && ProcessCompletion(Session, Transferred, OverLappedData->ioType);
+
+		if (!keepConnected)
+		{
+			Session->Disconnect();
+		}
+
 		Session->CompleteIO();
-
-		if (!success)
-		{
-			DisconnectSession(Session);
-			continue;
-		}
-
-		if (OverLappedData->ioType == EIO_TYPE::ACCEPT)
-		{
-			cout << "Client Connect\n";
-
-			if (setsockopt(Session->GetSocket(), SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&m_ServerSocket, sizeof(m_ServerSocket)) != 0)
-			{
-				cout << "setsockopt error: " << WSAGetLastError() << '\n';
-				DisconnectSession(Session);
-				continue;
-			}
-			if (CreateIoCompletionPort((HANDLE)Session->GetSocket(), _iocpHandle, 0, 0) == NULL)
-			{
-				cout << "CreateIoCompletionPort error: " << GetLastError() << '\n';
-				DisconnectSession(Session);
-				continue;
-			}
-
-			if (!Session->CompleteAccept() || !Session->PostRead())
-			{
-				DisconnectSession(Session);
-			}
-		}
-		else if (OverLappedData->ioType == EIO_TYPE::READ)
-		{
-			//cout << "Read Complete\n";
-
-			if (Transferred == 0) //클라이언트 종료
-			{
-				DisconnectSession(Session);
-				continue;
-			}
-
-			if (Session->OnRecv(Transferred) == false)
-			{
-				DisconnectSession(Session);
-				continue;
-			}
-
-			if (Session->PostRead() == false)
-			{
-				DisconnectSession(Session);
-				continue;
-			}
-		}
-		else if (OverLappedData->ioType == EIO_TYPE::WRITE)
-		{
-			cout << "Write Complete\n";
-
-			if (!Session->OnSend(Transferred))
-			{
-				DisconnectSession(Session);
-			}
-		}
-		else
-		{
-			printf("Unknown IO Type\n");
-		}
+		TryRecycleSession(Session);
 	}
 }
 
@@ -107,17 +51,70 @@ void CIOCPManager::InitAcceptEx(SOCKET _ListenSoceket)
 	WSAIoctl(_ListenSoceket, SIO_GET_EXTENSION_FUNCTION_POINTER, &GuidAcceptEx, sizeof(GuidAcceptEx), &g_AcceptEx, sizeof(g_AcceptEx), &Bytes, nullptr, nullptr);
 }
 
-void CIOCPManager::DisconnectSession(CSession* _Session)
+bool CIOCPManager::ProcessCompletion(CSession* _Session, DWORD _TransferredBytes, EIO_TYPE _IOType)
 {
-	_Session->Disconnect();
+	switch (_IOType)
+	{
+	case EIO_TYPE::ACCEPT:
+	{
+		cout << "Client Connect\n";
 
-	if (_Session->TryReset())
+		if (setsockopt(_Session->GetSocket(), SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&m_ServerSocket, sizeof(m_ServerSocket)) != 0)
+		{
+			cout << "setsockopt error: " << WSAGetLastError() << '\n';
+			return false;
+		}
+
+		if (CreateIoCompletionPort((HANDLE)_Session->GetSocket(), m_IOCPHandle, 0, 0) == NULL)
+		{
+			cout << "CreateIoCompletionPort error: " << GetLastError() << '\n';
+			return false;
+		}
+
+		return _Session->CompleteAccept() && _Session->PostRead();
+	}
+	case EIO_TYPE::READ:
+	{
+		//cout << "Read Complete\n";
+
+		if (_TransferredBytes == 0) //클라이언트 종료
+		{
+			return false;
+		}
+
+		return _Session->OnRecv(_TransferredBytes) && _Session->PostRead();
+	}
+	case EIO_TYPE::WRITE:
+	{
+		cout << "Write Complete\n";
+
+		return _Session->OnSend(_TransferredBytes);
+	}
+	default:
+	{
+		printf("Unknown IO Type\n");
+		return false;
+	}
+	}
+
+	return true;
+}
+
+void CIOCPManager::TryRecycleSession(CSession* _Session)
+{
+	if (_Session->TryReset() && m_IsRunning.load())
 	{
 		if (!_Session->PostAccept(m_ServerSocket))
 		{
 			cout << "PostAccept Failed\n";
 		}
 	}
+}
+
+void CIOCPManager::DisconnectSession(CSession* _Session)
+{
+	_Session->Disconnect();
+	TryRecycleSession(_Session);
 }
 
 void CIOCPManager::StopWorkerThreads()
@@ -138,6 +135,43 @@ void CIOCPManager::StopWorkerThreads()
 	}
 
 	m_WorkerThreads.clear();
+}
+
+void CIOCPManager::PrintStatus()
+{
+	array<size_t, 4> SessionCounts{};
+	int32_t TotalPendingIO = 0;
+
+	for (const shared_ptr<CSession>& Session : m_SessionPool)
+	{
+		const size_t StateIndex =
+			static_cast<size_t>(Session->GetState());
+
+		if (StateIndex < SessionCounts.size())
+		{
+			++SessionCounts[StateIndex];
+		}
+
+		TotalPendingIO += Session->GetPendingIOCount();
+	}
+
+	cout << "running="
+		<< (m_IsRunning.load() ? "true" : "false")
+		<< ", workers=" << m_WorkerThreads.size()
+		<< ", disconnected="
+		<< SessionCounts[
+			static_cast<size_t>(ESessionState::DISCONNECTED)]
+		<< ", accepting="
+		<< SessionCounts[
+			static_cast<size_t>(ESessionState::ACCEPTING)]
+		<< ", connected="
+		<< SessionCounts[
+			static_cast<size_t>(ESessionState::CONNECTED)]
+		<< ", disconnecting="
+		<< SessionCounts[
+			static_cast<size_t>(ESessionState::DISCONNECTING)]
+		<< ", pendingIO=" << TotalPendingIO
+		<< '\n';
 }
 
 CIOCPManager::CIOCPManager(CPacketDispatcher& _PacketDispatcher) : m_PacketDispatcher(_PacketDispatcher), m_IsRunning(false)
@@ -231,13 +265,33 @@ void CIOCPManager::Run()
 	//cout << ThreadCount << endl;
 	cout << "Server is running on port 8694..." << endl;
 
-	while (true)
+	return;
+}
+
+void CIOCPManager::Stop()
+{
+	if (!m_IsRunning.exchange(false))
 	{
+		return;
 	}
 
-	Release();
+	if(m_ServerSocket != INVALID_SOCKET)
+	{
+		closesocket(m_ServerSocket);
+	}
 
-	return;
+	for(shared_ptr<CSession>& session : m_SessionPool)
+	{
+		DisconnectSession(session.get());
+	}
+
+	for (shared_ptr<CSession>& session : m_SessionPool)
+	{
+		session->WaitForPendingIO();
+	}
+
+	StopWorkerThreads();
+	m_ServerSocket = INVALID_SOCKET;
 }
 
 void CIOCPManager::Release()
@@ -247,6 +301,11 @@ void CIOCPManager::Release()
 	{
 		m_SessionPool[i]->Release();
 	}
-	closesocket(m_ServerSocket);
+
+	if(m_ServerSocket != INVALID_SOCKET)
+	{
+		closesocket(m_ServerSocket);
+		m_ServerSocket = INVALID_SOCKET;
+	}
 	WSACleanup();
 }

@@ -14,6 +14,8 @@ public:
 	bool Init();
 	void Run();
 
+	void ProcessConsoleCommand();
+
 private:
 	CDBManager m_DBManager;
 	CPacketDispatcher m_PacketDispatcher;

@@ -35,6 +35,9 @@ public:
 	~CSession();
 
 	SOCKET GetSocket() const { return m_Socket; }
+	int32_t GetPendingIOCount() const { return m_PendingIOCount.load(); }
+
+	ESessionState GetState();
 
 	void Init();
 	void Disconnect();
