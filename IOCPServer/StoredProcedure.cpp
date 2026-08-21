@@ -1,22 +1,59 @@
 #include "pch.h"
 #include "StoredProcedure.h"
 
-CStoredProcedure::CStoredProcedure()
+bool CStoredProcedure::Utf8ToWide(const std::string& _Source, std::wstring& _Destination)
 {
+	if (_Source.empty())
+	{
+		_Destination.clear();
+		return true;
+	}
+
+	const int32_t Length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, _Source.data(), static_cast<int32_t>(_Source.size()),	nullptr, 0);
+
+	if (Length <= 0)
+	{
+		return false;
+	}
+
+	_Destination.resize(Length);
+
+	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, _Source.data(), static_cast<int32_t>(_Source.size()), _Destination.data(), Length) == Length;
 }
 
-void CStoredProcedure::Init()
+bool CStoredProcedure::ExecuteProcedure(SQLHDBC _ConnectionHandle, const wchar_t* _Query, const StatementAction& _BindParameters)
 {
-	//SQLRETURN Result = SQLAllocHandle(SQL_HANDLE_STMT, SQL_NULL_HDBC, &m_StatementHandle);
-	//if (!SQL_SUCCEEDED(Result))
-	//{
-	//	return;
-	//}
+	return ExecuteProcedure(_ConnectionHandle, _Query, _BindParameters, {});
+}
 
-	//Result = SQLPrepareW(m_StatementHandle, m_Query, SQL_NTS);
-	//if (!SQL_SUCCEEDED(Result))
-	//{
-	//	SQLFreeHandle(SQL_HANDLE_STMT, m_StatementHandle);
-	//	return;
-	//}
+bool CStoredProcedure::ExecuteProcedure(SQLHDBC _ConnectionHandle, const wchar_t* _Query, const StatementAction& _BindParameters, const StatementAction& _ReadResultRows)
+{
+	if (_ConnectionHandle == SQL_NULL_HDBC || _Query == nullptr || !_BindParameters)
+	{
+		return false;
+	}
+
+	CDBStatement Statement(_ConnectionHandle);
+
+	if (!Statement.IsValid())
+	{
+		return false;
+	}
+
+	if (!_BindParameters(Statement))
+	{
+		return false;
+	}
+
+	if (!Statement.ExecuteDirect(_Query))
+	{
+		return false;
+	}
+
+	if (_ReadResultRows && !_ReadResultRows(Statement))
+	{
+		return false;
+	}
+
+	return Statement.CompleteResults();
 }

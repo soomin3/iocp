@@ -17,6 +17,11 @@ CDBManager::~CDBManager()
 
 bool CDBManager::Init()
 {
+	if (m_EnvironmentHandle != SQL_NULL_HENV || m_ConnectionHandle != SQL_NULL_HDBC)
+	{
+		return false;
+	}
+
 	SQLRETURN Result = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &m_EnvironmentHandle);
 
 	if(!SQL_SUCCEEDED(Result))
@@ -28,6 +33,7 @@ bool CDBManager::Init()
 
 	if(!SQL_SUCCEEDED(Result))
 	{
+		PrintDiagnostics(SQL_HANDLE_ENV, m_EnvironmentHandle, L"SQLSetEnvAttr");
 		Release();
 		return false;
 	}
@@ -35,6 +41,7 @@ bool CDBManager::Init()
 	Result = SQLAllocHandle(SQL_HANDLE_DBC, m_EnvironmentHandle, &m_ConnectionHandle);
 	if(!SQL_SUCCEEDED(Result))
 	{
+		PrintDiagnostics(SQL_HANDLE_ENV, m_EnvironmentHandle, L"SQLAllocHandle(DBC)");
 		Release();
 		return false;
 	}
@@ -61,7 +68,7 @@ void CDBManager::Release()
 
 bool CDBManager::Connect(const wstring& _ConnectionString)
 {
-	if (m_EnvironmentHandle == SQL_NULL_HENV || m_ConnectionHandle == SQL_NULL_HDBC)
+	if (m_EnvironmentHandle == SQL_NULL_HENV ||	m_ConnectionHandle == SQL_NULL_HDBC || m_IsConnected || _ConnectionString.empty())
 	{
 		return false;
 	}
@@ -72,6 +79,7 @@ bool CDBManager::Connect(const wstring& _ConnectionString)
 	SQLRETURN Result = SQLDriverConnectW(m_ConnectionHandle, nullptr, (SQLWCHAR*)_ConnectionString.c_str(), SQL_NTS, OutConnectionString, 1024, &OutConnectionLen, SQL_DRIVER_NOPROMPT);
 	if (!SQL_SUCCEEDED(Result))
 	{
+		PrintDiagnostics(SQL_HANDLE_DBC, m_ConnectionHandle, L"SQLDriverConnectW");
 		return false;
 	}
 
@@ -81,7 +89,9 @@ bool CDBManager::Connect(const wstring& _ConnectionString)
 
 void CDBManager::Disconnect()
 {
-	if (m_ConnectionHandle)
+	StopWorker();
+
+	if (m_ConnectionHandle != SQL_NULL_HDBC && m_IsConnected)
 	{
 		SQLDisconnect(m_ConnectionHandle);
 		m_IsConnected = false;
@@ -90,7 +100,7 @@ void CDBManager::Disconnect()
 
 bool CDBManager::StartWorker()
 {
-	if (m_WorkerThread.joinable())
+	if (!m_IsConnected || m_WorkerThread.joinable())
 	{
 		return false;
 	}
@@ -106,7 +116,7 @@ bool CDBManager::StartWorker()
 
 bool CDBManager::Enqueue(DBJob _Job)
 {
-	if (!_Job)
+	if (!_Job || !m_IsConnected || !m_WorkerThread.joinable())
 	{
 		return false;
 	}
@@ -168,22 +178,35 @@ void CDBManager::WorkerThread()
 
 bool CDBManager::AuthenticateAsync(string _ID, string _PW, ProcCallback _Callback)
 {
-	if (!_Callback)
-	{
-		return false;
-	}
-
-	return Enqueue([this, ID = move(_ID), PW = move(_PW), Callback = move(_Callback)]() mutable
-		{
-			SLoginProcedureResult Result = ExecuteLoginProcedure(ID, PW);
-
-			Callback(move(Result));
-		});
+	return ExecuteProcedureAsync(CProcedure_UserLogin(move(_ID), move(_PW)), move(_Callback));
 }
 
-SLoginProcedureResult CDBManager::ExecuteLoginProcedure(string& _ID, string& _PW)
+void CDBManager::PrintDiagnostics(SQLSMALLINT _HandleType, SQLHANDLE _Handle, const wchar_t* _Operation) const
 {
-	CProcedure_UserLogin proc;
+	if (_Handle == SQL_NULL_HANDLE)
+	{
+		return;
+	}
 
-	return proc.Execute(m_ConnectionHandle, _ID, _PW);
+	for (SQLSMALLINT Record = 1; ; ++Record)
+	{
+		SQLWCHAR SqlState[6] = {};
+		SQLINTEGER NativeError = 0;
+		SQLWCHAR Message[1024] = {};
+		SQLSMALLINT MessageLength = 0;
+
+		const SQLRETURN Result = SQLGetDiagRecW(_HandleType, _Handle, Record, SqlState, &NativeError, Message, static_cast<SQLSMALLINT>(std::size(Message)), &MessageLength);
+
+		if (Result == SQL_NO_DATA || !SQL_SUCCEEDED(Result))
+		{
+			break;
+		}
+
+		std::wcerr
+			<< L"[ODBC] " << _Operation
+			<< L" SQLSTATE=" << reinterpret_cast<const wchar_t*>(SqlState)
+			<< L" NativeError=" << NativeError
+			<< L" Message=" << reinterpret_cast<const wchar_t*>(Message)
+			<< std::endl;
+	}
 }

@@ -5,6 +5,7 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <utility>
 #include <sql.h>
 #include <sqlext.h>
 #include "AuthProcedureTypes.h"
@@ -31,12 +32,26 @@ public:
 	bool Enqueue(DBJob _Job);
 	void StopWorker();
 
+	template<typename PROCEDURE>
+	bool ExecuteProcedureAsync(PROCEDURE _Procedure, function<void(typename PROCEDURE::ResultType)> _Callback)
+	{
+		if (!_Callback)
+		{
+			return false;
+		}
+
+		return Enqueue([this, Procedure = move(_Procedure), Callback = move(_Callback)]() mutable
+			{
+				typename PROCEDURE::ResultType Result = Procedure.Execute(m_ConnectionHandle);
+				Callback(move(Result));
+			});
+	}
+
 	bool AuthenticateAsync(string _ID, string _PW, ProcCallback _Callback);
 
 private:
 	void WorkerThread();
-
-	SLoginProcedureResult ExecuteLoginProcedure(string& _ID, string& _PW);
+	void PrintDiagnostics(SQLSMALLINT _HandleType, SQLHANDLE _Handle, const wchar_t* _Operation) const;
 
 private:
 	SQLHENV m_EnvironmentHandle;

@@ -1,23 +1,25 @@
 #pragma once
+
+#include <functional>
 #include <string>
 #include <sql.h>
 #include <sqlext.h>
 #include "DBStatement.h"
 
-using namespace std;
-
 class CStoredProcedure
 {
-public:
-	CStoredProcedure();
-
 protected:
-	virtual void Init();
+	using StatementAction = std::function<bool(CDBStatement&)>;
+	static bool Utf8ToWide(const std::string& _Source, std::wstring& _Destination);
 
-	template<typename PROC>
-	bool ExecuteProcedure(SQLHDBC _ConnectionHandle, PROC& _Procedure)
-	{
-		return false;
-	}
+	bool ExecuteProcedure(
+		SQLHDBC _ConnectionHandle,
+		const wchar_t* _Query,
+		const StatementAction& _BindParameters);
 
+	bool ExecuteProcedure(
+		SQLHDBC _ConnectionHandle,
+		const wchar_t* _Query,
+		const StatementAction& _BindParameters,
+		const StatementAction& _ReadResultRows);
 };

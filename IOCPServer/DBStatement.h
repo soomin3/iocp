@@ -1,64 +1,152 @@
 #pragma once
+
 #include <cstdint>
 #include <sql.h>
 #include <sqlext.h>
 #include <string>
 
-using namespace std;
-
 template <typename T>
 struct OdbcType;
 
 template<>
+struct OdbcType<int16_t>
+{
+	static constexpr SQLSMALLINT cType = SQL_C_SSHORT;
+	static constexpr SQLSMALLINT sqlType = SQL_SMALLINT;
+};
+
+template<>
 struct OdbcType<int32_t>
 {
-    static constexpr SQLSMALLINT cType = SQL_C_SLONG;
-    static constexpr SQLSMALLINT sqlType = SQL_INTEGER;
+	static constexpr SQLSMALLINT cType = SQL_C_SLONG;
+	static constexpr SQLSMALLINT sqlType = SQL_INTEGER;
 };
 
 template<>
 struct OdbcType<int64_t>
 {
-    static constexpr SQLSMALLINT cType = SQL_C_SBIGINT;
-    static constexpr SQLSMALLINT sqlType = SQL_BIGINT;
+	static constexpr SQLSMALLINT cType = SQL_C_SBIGINT;
+	static constexpr SQLSMALLINT sqlType = SQL_BIGINT;
 };
 
 template<>
-struct OdbcType<wchar_t>
+struct OdbcType<uint8_t>
 {
-    static constexpr SQLSMALLINT cType = SQL_C_WCHAR;
-    static constexpr SQLSMALLINT sqlType = SQL_WVARCHAR;
+	static constexpr SQLSMALLINT cType = SQL_C_UTINYINT;
+	static constexpr SQLSMALLINT sqlType = SQL_TINYINT;
+};
+
+template<>
+struct OdbcType<bool>
+{
+	static constexpr SQLSMALLINT cType = SQL_C_BIT;
+	static constexpr SQLSMALLINT sqlType = SQL_BIT;
+};
+
+template<>
+struct OdbcType<float>
+{
+	static constexpr SQLSMALLINT cType = SQL_C_FLOAT;
+	static constexpr SQLSMALLINT sqlType = SQL_REAL;
+};
+
+template<>
+struct OdbcType<double>
+{
+	static constexpr SQLSMALLINT cType = SQL_C_DOUBLE;
+	static constexpr SQLSMALLINT sqlType = SQL_DOUBLE;
 };
 
 class CDBStatement
 {
 public:
-    explicit CDBStatement(SQLHSTMT _StatementHandle) : m_StatementHandle(_StatementHandle)
-    {
-    }
+	explicit CDBStatement(SQLHDBC _ConnectionHandle);
+	~CDBStatement();
 
-    template<typename T>
-    bool BindInput(SQLUSMALLINT _Index, T& _Value, SQLLEN& _Ind)
-    {
-        return SQL_SUCCEEDED(SQLBindParameter(m_StatementHandle, _Index, SQL_PARAM_INPUT, OdbcType<T>::cType, OdbcType<T>::sqlType, 0, 0, &_Value, sizeof(T), &_Ind));
-    }
+	CDBStatement(const CDBStatement&) = delete;
+	CDBStatement& operator=(const CDBStatement&) = delete;
 
-    template<typename T>
-    bool BindOutput(SQLUSMALLINT _Index, T& _Value, SQLLEN& _Ind)
-    {
-        return SQL_SUCCEEDED(SQLBindParameter(m_StatementHandle, _Index, SQL_PARAM_OUTPUT, OdbcType<T>::cType, OdbcType<T>::sqlType, 0, 0, &_Value, sizeof(T), &_Ind));
-    }
+	bool IsValid() const { return m_StatementHandle != SQL_NULL_HSTMT; }
 
-    template<typename T>
-    bool BindColumn(SQLUSMALLINT _Index, T& _Value, SQLLEN& _Ind)
-    {
-        return SQL_SUCCEEDED(SQLBindCol(m_StatementHandle, _Index, OdbcType<T>::cType, &_Value, sizeof(T), &_Ind));
-    }
+	template<typename T>
+	bool BindInput(SQLUSMALLINT _Index, T& _Value, SQLLEN& _Indicator)
+	{
+		const SQLRETURN Result = SQLBindParameter(
+			m_StatementHandle,
+			_Index,
+			SQL_PARAM_INPUT,
+			OdbcType<T>::cType,
+			OdbcType<T>::sqlType,
+			0,
+			0,
+			&_Value,
+			sizeof(T),
+			&_Indicator);
 
-    bool BindInputWString(SQLUSMALLINT _Index, wstring& _Value, SQLULEN _ColumnSize, SQLLEN& _Indicator);
+		if (!SQL_SUCCEEDED(Result))
+		{
+			PrintDiagnostics(L"SQLBindParameter(input)");
+			return false;
+		}
 
-    void PrintOdbcDiagnostics(SQLSMALLINT _HandleType, SQLHANDLE _Handle, const wchar_t* _Operation);
+		return true;
+	}
+
+	template<typename T>
+	bool BindOutput(SQLUSMALLINT _Index, T& _Value, SQLLEN& _Indicator)
+	{
+		const SQLRETURN Result = SQLBindParameter(
+			m_StatementHandle,
+			_Index,
+			SQL_PARAM_OUTPUT,
+			OdbcType<T>::cType,
+			OdbcType<T>::sqlType,
+			0,
+			0,
+			&_Value,
+			sizeof(T),
+			&_Indicator);
+
+		if (!SQL_SUCCEEDED(Result))
+		{
+			PrintDiagnostics(L"SQLBindParameter(output)");
+			return false;
+		}
+
+		return true;
+	}
+
+	template<typename T>
+	bool BindColumn(SQLUSMALLINT _Index, T& _Value, SQLLEN& _Indicator)
+	{
+		const SQLRETURN Result = SQLBindCol(
+			m_StatementHandle,
+			_Index,
+			OdbcType<T>::cType,
+			&_Value,
+			sizeof(T),
+			&_Indicator);
+
+		if (!SQL_SUCCEEDED(Result))
+		{
+			PrintDiagnostics(L"SQLBindCol");
+			return false;
+		}
+
+		return true;
+	}
+
+	bool BindInputWString(SQLUSMALLINT _Index, const std::wstring& _Value, SQLULEN _ColumnSize, SQLLEN& _Indicator);
+	bool BindOutputWString(SQLUSMALLINT _Index, wchar_t* _Buffer, SQLULEN _BufferCharacterCount, SQLLEN& _Indicator);
+	bool BindColumnWString(SQLUSMALLINT _Index, wchar_t* _Buffer, SQLULEN _BufferCharacterCount, SQLLEN& _Indicator);
+
+	bool ExecuteDirect(const wchar_t* _Query);
+	SQLRETURN Fetch();
+	SQLRETURN NextResult();
+	bool CompleteResults();
+
+	void PrintDiagnostics(const wchar_t* _Operation) const;
 
 private:
-    SQLHSTMT m_StatementHandle;
+	SQLHSTMT m_StatementHandle;
 };
