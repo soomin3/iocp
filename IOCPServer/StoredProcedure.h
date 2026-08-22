@@ -1,25 +1,42 @@
 #pragma once
-
-#include <functional>
 #include <string>
-#include <sql.h>
-#include <sqlext.h>
-#include "DBStatement.h"
+#include "DBConnection.h"
+#include "DBError.h"
+
+using namespace std;
+
+class CProcedureBinder;
+class CDBResultReader;
 
 class CStoredProcedure
 {
+public:
+	CStoredProcedure() = default;
+	virtual ~CStoredProcedure() = default;
+
+	CStoredProcedure(const CStoredProcedure&) = delete;
+	CStoredProcedure& operator=(const CStoredProcedure&) = delete;
+	CStoredProcedure(CStoredProcedure&&) noexcept = default;
+	CStoredProcedure& operator=(CStoredProcedure&&) noexcept = default;
+
+	bool Execute(CDBConnection& _Connection);
+
+	bool Succeeded() const { return m_Succeeded; }
+	const SDBError& GetError() const { return m_Error; }
+	const wstring& GetErrorMessage() const { return m_Error.Message; }
+
 protected:
-	using StatementAction = std::function<bool(CDBStatement&)>;
-	static bool Utf8ToWide(const std::string& _Source, std::wstring& _Destination);
+	virtual const wchar_t* GetProcedureName() const = 0;
+	virtual bool BindParameters(CProcedureBinder& _Binder) = 0;
 
-	bool ExecuteProcedure(
-		SQLHDBC _ConnectionHandle,
-		const wchar_t* _Query,
-		const StatementAction& _BindParameters);
+	virtual void ResetResultRows() {}
+	virtual bool ReadResultRows(CDBResultReader&) { return true; }
+	virtual bool ValidateResult(wstring&) { return true; }
 
-	bool ExecuteProcedure(
-		SQLHDBC _ConnectionHandle,
-		const wchar_t* _Query,
-		const StatementAction& _BindParameters,
-		const StatementAction& _ReadResultRows);
+private:
+	void SetError(EDBErrorCode _Code, const wchar_t* _Operation, const wstring& _Message);
+
+private:
+	bool m_Succeeded = false;
+	SDBError m_Error;
 };

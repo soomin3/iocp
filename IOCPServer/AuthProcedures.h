@@ -1,23 +1,34 @@
 #pragma once
-#include <string>
-#include <utility>
+#include <cstdint>
+#include "DBParameter.h"
 #include "StoredProcedure.h"
-#include "AuthProcedureTypes.h"
 
 using namespace std;
 
-class CProcedure_UserLogin : public CStoredProcedure
+class CProcedure_UserLogin final : public CStoredProcedure
 {
 public:
-	using ResultType = SLoginProcedureResult;
+	TDBReturn<int32_t> ResultCode;
+	TDBInputString<64> ID;
+	TDBInputString<64> PW;
+	TDBOutput<int64_t> AccountID;
+	TDBOutputString<16> Nickname;
 
-	CProcedure_UserLogin(string _ID, string _PW): m_ID(move(_ID)), m_PW(move(_PW))
-	{
-	}
+protected:
+	const wchar_t* GetProcedureName() const override;
+	bool BindParameters(CProcedureBinder& _Binder) override;
+	bool ValidateResult(wstring& _ErrorMessage) override;
+};
 
-	ResultType Execute(SQLHDBC _ConnectionHandle);
+class CProcedure_CreateNickname final : public CStoredProcedure
+{
+public:
+	TDBReturn<int32_t> ResultCode;
+	TDBInput<int64_t> AccountID;
+	TDBInputString<16> Nickname;
 
-private:
-	string m_ID;
-	string m_PW;
+protected:
+	const wchar_t* GetProcedureName() const override;
+	bool BindParameters(CProcedureBinder& _Binder) override;
+	bool ValidateResult(wstring& _ErrorMessage) override;
 };

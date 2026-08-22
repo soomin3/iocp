@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "Server.h"
 
-int main(int argc, char** argv)
+int main()
 {
 	CServer Server;
 	if (!Server.Init())

@@ -1,21 +1,38 @@
 #pragma once
 #include <array>
 #include <cstddef>
-#include <functional>
 #include "Packet.h"
-
-class CSession;
 
 using namespace std;
 
-using PacketHandler = function<bool(CSession&, const char*, const PacketHeader&)>;
+class CSession;
+
+enum class EPacketSource : uint8_t
+{
+	CLIENT,
+	DATABASE,
+	GAME_SERVER
+};
+
+struct SPacketContext
+{
+	EPacketSource Source = EPacketSource::CLIENT;
+	CSession* Session = nullptr;
+};
+
+class IPacketHandler
+{
+public:
+	virtual ~IPacketHandler() = default;
+	virtual bool Handle(const SPacketContext& _Context, const char* _Buffer, const PacketHeader& _Header) = 0;
+};
 
 class CPacketDispatcher
 {
 public:
-	bool Register(PacketID _PacketID, PacketHandler _Handler);
-	bool Dispatch(CSession& _Session, const char* _Buffer, const PacketHeader& _Header) const;
+	bool Register(PacketID _PacketID, IPacketHandler& _Handler);
+	bool Dispatch(const SPacketContext& _Context, const char* _Buffer, const PacketHeader& _Header) const;
 
 private:
-	array<PacketHandler, static_cast<size_t>(PacketID::ID_MAX)> m_Handlers{};
+	array<IPacketHandler*, static_cast<size_t>(PacketID::ID_MAX)> m_Handlers{};
 };

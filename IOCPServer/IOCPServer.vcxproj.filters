@@ -13,6 +13,15 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Database">
+      <UniqueIdentifier>{A2C06331-A8C5-4E47-83C5-D7583D042661}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Database\Core">
+      <UniqueIdentifier>{D06176EB-D3D6-454F-92EE-54F250035E5B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Database\Procedures">
+      <UniqueIdentifier>{4F36E89B-A3DE-4DFA-A5B8-C272128B02D4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -31,10 +40,13 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DBManager.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Database\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="DBRequestHandlers.cpp">
+      <Filter>Database\Core</Filter>
     </ClCompile>
     <ClCompile Include="StoredProcedure.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Database\Core</Filter>
     </ClCompile>
     <ClCompile Include="pch.cpp">
       <Filter>Header Files</Filter>
@@ -49,9 +61,36 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DBStatement.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Database\Core</Filter>
     </ClCompile>
     <ClCompile Include="AuthProcedures.cpp">
+      <Filter>Database\Procedures</Filter>
+    </ClCompile>
+    <ClCompile Include="DBConnection.cpp">
+      <Filter>Database\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="DBError.cpp">
+      <Filter>Database\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="DBResultReader.cpp">
+      <Filter>Database\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="ProcedureBinder.cpp">
+      <Filter>Database\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="TextValidation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TextEncoding.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ChatHandlers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ChatLogManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WorldChat.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -81,10 +120,13 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DBManager.h">
-      <Filter>Source Files</Filter>
+      <Filter>Database\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="DBRequestHandlers.h">
+      <Filter>Database\Core</Filter>
     </ClInclude>
     <ClInclude Include="StoredProcedure.h">
-      <Filter>Source Files</Filter>
+      <Filter>Database\Core</Filter>
     </ClInclude>
     <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
@@ -99,16 +141,61 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DBStatement.h">
-      <Filter>Header Files</Filter>
+      <Filter>Database\Core</Filter>
     </ClInclude>
     <ClInclude Include="AuthProcedures.h">
+      <Filter>Database\Procedures</Filter>
+    </ClInclude>
+    <ClInclude Include="DBConnection.h">
+      <Filter>Database\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="DBError.h">
+      <Filter>Database\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="DBParameter.h">
+      <Filter>Database\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="DBResultReader.h">
+      <Filter>Database\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="ProcedureBinder.h">
+      <Filter>Database\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="PacketSender.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="AuthProcedureTypes.h">
+    <ClInclude Include="TextValidation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TextEncoding.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ChatHandlers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ChatLogManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ChatTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WorldChat.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\Database.sql">
+      <Filter>Database</Filter>
+    </None>
+    <None Include="..\DBConfig.example.txt">
+      <Filter>Database</Filter>
+    </None>
+    <None Include="..\DB_GUIDE.md">
+      <Filter>Database</Filter>
+    </None>
+    <None Include="..\README.md">
+      <Filter>Resource Files</Filter>
+    </None>
     <None Include="PacketList.inc">
       <Filter>Resource Files</Filter>
     </None>

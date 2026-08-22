@@ -1,8 +1,11 @@
 #include "pch.h"
 #include "Server.h"
-#include "AuthHandlers.h"
 
-CServer::CServer() : m_IOCPManager(m_PacketDispatcher)
+CServer::CServer()
+	: m_WorldChat(m_UserManager, m_ChatLogManager),
+	m_AuthHandlers(m_DBManager, m_UserManager),
+	m_ChatHandlers(m_WorldChat),
+	m_IOCPManager(m_PacketDispatcher, m_UserManager)
 {
 }
 
@@ -15,30 +18,41 @@ bool CServer::Init()
 	}
 	cout << "SQL Server Init Success" << endl;
 
-	//Result = DBManager.Connect(L"Driver={SQL Server};Server=127.0.0.1;Database=TestDB;Trusted_Connection=yes;");
-	wstring  ConnectionString = L"Driver={SQL Server};Server=127.0.0.1,1433;Database=TestDB;UID = sa;PWD = test;TrustedServerCertificate=yes;";
-
-	if (!m_DBManager.Connect(ConnectionString))
+	if (!m_DBManager.Connect("DBConfig.txt", "TestDB"))
 	{
 		cout << "SQL Server Connect Failed" << endl;
 		return false;
 	}
 	cout << "SQL Server Connect Success" << endl;
 
-	if(!m_DBManager.StartWorker())
+	if (!m_ChatLogManager.Start("logs"))
 	{
-		cout << "SQL Server Start Worker Failed" << endl;
+		cout << "Chat Log Manager Start Failed" << endl;
 		return false;
 	}
-	cout << "SQL Server Start Worker Success" << endl;
+	cout << "Chat Log Manager Start Success" << endl;
 
-	if (!RegisterAuthHandlers(m_PacketDispatcher, m_DBManager))
+	if (!m_WorldChat.Start())
+	{
+		cout << "World Chat Start Failed" << endl;
+		return false;
+	}
+	cout << "World Chat Start Success" << endl;
+
+	if (!m_AuthHandlers.RegisterAll(m_PacketDispatcher))
 	{
 		cout << "Auth Handler Register Failed" << endl;
 		return false;
 	}
 
 	cout << "Auth Handler Register Success" << endl;
+
+	if (!m_ChatHandlers.RegisterAll(m_PacketDispatcher))
+	{
+		cout << "Chat Handler Register Failed" << endl;
+		return false;
+	}
+	cout << "Chat Handler Register Success" << endl;
 
 	if (!m_IOCPManager.Init())
 	{
@@ -47,18 +61,28 @@ bool CServer::Init()
 	}
 	cout << "IOCP Manager Init Success" << endl;
 
+	if(!m_DBManager.StartWorker(m_IOCPManager))
+	{
+		cout << "SQL Server Start Worker Failed" << endl;
+		return false;
+	}
+	cout << "SQL Server Start Worker Success" << endl;
+
 	return true;
 }
 
 void CServer::Run()
 {
-	m_IOCPManager.Run();
+	if (m_IOCPManager.Run())
+	{
+		thread ConsoleThread(&CServer::ProcessConsoleCommand, this);
+		ConsoleThread.join();
+	}
 
-	thread ConsoleThread(&CServer::ProcessConsoleCommand, this);
-	ConsoleThread.join();
-
-	m_IOCPManager.Stop();
 	m_DBManager.StopWorker();
+	m_IOCPManager.Stop();
+	m_WorldChat.Stop();
+	m_ChatLogManager.Stop();
 	m_IOCPManager.Release();
 }
 
@@ -83,6 +107,16 @@ void CServer::ProcessConsoleCommand()
 		else if (Command == "status")
 		{
 			m_IOCPManager.PrintStatus();
+			cout << "dbQueue=" << m_DBManager.GetPendingJobCount()
+				<< ", activeUsers=" << m_UserManager.GetUserCount()
+				<< ", worldChatAudience=" << m_WorldChat.GetAudienceCount()
+				<< ", worldChatQueue=" << m_WorldChat.GetQueueSize()
+				<< ", worldChatProcessed=" << m_WorldChat.GetProcessedCount()
+				<< ", worldChatRejected=" << m_WorldChat.GetRejectedCount()
+				<< ", logQueue=" << m_ChatLogManager.GetQueueSize()
+				<< ", logWritten=" << m_ChatLogManager.GetWrittenCount()
+				<< ", logFailures=" << m_ChatLogManager.GetFailureCount()
+				<< '\n';
 		}
 		else if (!Command.empty())
 		{

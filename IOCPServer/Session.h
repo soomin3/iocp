@@ -8,10 +8,14 @@
 #include <deque>
 #include <iostream>
 #include <vector>
+#include <memory>
+
+#include "Myinclude.h"
 
 using namespace std;
 class CSession;
 class CPacketDispatcher;
+class CUser;
 
 enum class EIO_TYPE : uint8_t
 {
@@ -38,11 +42,13 @@ struct SMyOverlapped
 class CSession
 {
 public:
-	explicit CSession(const CPacketDispatcher& _PacketDispatcher);
+	CSession(const CPacketDispatcher& _PacketDispatcher, uint32_t _SessionID);
 	~CSession();
 
 	SOCKET GetSocket() const { return m_Socket; }
+	uint32_t GetSessionID() const { return m_SessionID; }
 	int32_t GetPendingIOCount() const { return m_PendingIOCount.load(); }
+	size_t GetQueuedSendBytes();
 
 	ESessionState GetState();
 	uint64_t GetGeneration();
@@ -64,20 +70,34 @@ public:
 	int32_t CompleteIO();
 	void WaitForPendingIO();
 
+	bool CompleteLogin(const shared_ptr<CUser>& _User, uint64_t _Generation);
+	bool IsAuthenticated(const shared_ptr<CUser>& _User, uint64_t _Generation);
+	shared_ptr<CUser> GetUser();
+	shared_ptr<CUser> DetachUser();
+
+	bool TryBeginLogin(uint64_t _Generation);
+	bool IsLoginPending(uint64_t _Generation);
+	void CancelLogin(uint64_t _Generation);
+
 	void PrintReadBuffer()
 	{
 		cout << "Read Buffer: " << m_ReadBuffer << endl;
 	}
 
 private:
+	bool ProcessPackets();
+
+	static constexpr size_t READ_BUFFER_SIZE = 64 * 1024;
+
 	SOCKET m_Socket;
+	const uint32_t m_SessionID;
 
 	SMyOverlapped m_AcceptOverlapped;
 	SMyOverlapped m_WriteOverlapped;
 	SMyOverlapped m_ReadOverlapped;
 
 	char m_AcceptBuffer[64];
-	char m_ReadBuffer[1024];
+	char m_ReadBuffer[READ_BUFFER_SIZE];
 
 	DWORD m_ReceivedBytes;
 
@@ -90,9 +110,14 @@ private:
 	CRITICAL_SECTION m_SendLock;
 	deque<vector<char>> m_SendQueue;
 	size_t m_SendOffset;
+	size_t m_QueuedSendBytes;
 	bool m_IsSending;
 	CRITICAL_SECTION m_PendingIOLock;
 	CONDITION_VARIABLE m_PendingIOCCondition;
 
 	const CPacketDispatcher& m_PacketDispatcher;
+	shared_ptr<CUser> m_User;
+	bool m_LoginRequestPending;
+
+	static constexpr size_t MAX_QUEUED_SEND_BYTES = 1024 * 1024;
 };

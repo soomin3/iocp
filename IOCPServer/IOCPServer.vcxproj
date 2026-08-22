@@ -72,7 +72,8 @@
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
@@ -86,14 +87,13 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ModuleDefinitionFile>
       </ModuleDefinitionFile>
-      <AdditionalDependencies>Ws2_32.lib;
-mswsock.lib
-;odbc32.lib</AdditionalDependencies>
+      <AdditionalDependencies>Ws2_32.lib;mswsock.lib;odbc32.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
@@ -109,14 +109,13 @@ mswsock.lib
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ModuleDefinitionFile>
       </ModuleDefinitionFile>
-      <AdditionalDependencies>Ws2_32.lib;
-mswsock.lib
-;odbc32.lib</AdditionalDependencies>
+      <AdditionalDependencies>Ws2_32.lib;mswsock.lib;odbc32.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
@@ -129,16 +128,15 @@ mswsock.lib
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Ws2_32.lib;
-mswsock.lib
-;odbc32.lib</AdditionalDependencies>
+      <AdditionalDependencies>Ws2_32.lib;mswsock.lib;odbc32.lib</AdditionalDependencies>
       <ModuleDefinitionFile>
       </ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
@@ -154,20 +152,24 @@ mswsock.lib
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ModuleDefinitionFile>
       </ModuleDefinitionFile>
-      <AdditionalDependencies>Ws2_32.lib;
-mswsock.lib
-;odbc32.lib</AdditionalDependencies>
+      <AdditionalDependencies>Ws2_32.lib;mswsock.lib;odbc32.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AuthHandlers.cpp" />
     <ClCompile Include="AuthProcedures.cpp" />
+    <ClCompile Include="ChatHandlers.cpp" />
+    <ClCompile Include="ChatLogManager.cpp" />
+    <ClCompile Include="DBConnection.cpp" />
+    <ClCompile Include="DBError.cpp" />
     <ClCompile Include="DBManager.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Use</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Use</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Use</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Use</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="DBRequestHandlers.cpp" />
+    <ClCompile Include="DBResultReader.cpp" />
     <ClCompile Include="DBStatement.cpp" />
     <ClCompile Include="IOCPManager.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Use</PrecompiledHeader>
@@ -182,6 +184,7 @@ mswsock.lib
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Use</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="PacketDispatcher.cpp" />
+    <ClCompile Include="ProcedureBinder.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
@@ -201,6 +204,9 @@ mswsock.lib
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Use</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Use</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="WorldChat.cpp" />
+    <ClCompile Include="TextEncoding.cpp" />
+    <ClCompile Include="TextValidation.cpp" />
     <ClCompile Include="User.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Use</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Use</PrecompiledHeader>
@@ -216,24 +222,40 @@ mswsock.lib
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AuthProcedures.h" />
-    <ClInclude Include="AuthProcedureTypes.h" />
+    <ClInclude Include="ChatHandlers.h" />
+    <ClInclude Include="ChatLogManager.h" />
+    <ClInclude Include="ChatTypes.h" />
     <ClInclude Include="CriticalSectionLock.h" />
+    <ClInclude Include="DBConnection.h" />
+    <ClInclude Include="DBError.h" />
     <ClInclude Include="DBManager.h" />
+    <ClInclude Include="DBRequestHandlers.h" />
     <ClInclude Include="AuthHandlers.h" />
+    <ClInclude Include="DBParameter.h" />
+    <ClInclude Include="DBResultReader.h" />
     <ClInclude Include="DBStatement.h" />
     <ClInclude Include="PacketDispatcher.h" />
     <ClInclude Include="IOCPManager.h" />
+    <ClInclude Include="WorldChat.h" />
     <ClInclude Include="Myinclude.h" />
     <ClInclude Include="Packet.h" />
+    <ClInclude Include="PacketSender.h" />
+    <ClInclude Include="ProcedureBinder.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Server.h" />
     <ClInclude Include="Session.h" />
     <ClInclude Include="Singleton.h" />
     <ClInclude Include="StoredProcedure.h" />
+    <ClInclude Include="TextEncoding.h" />
+    <ClInclude Include="TextValidation.h" />
     <ClInclude Include="User.h" />
     <ClInclude Include="UserManager.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\Database.sql" />
+    <None Include="..\DBConfig.example.txt" />
+    <None Include="..\DB_GUIDE.md" />
+    <None Include="..\README.md" />
     <None Include="PacketList.inc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

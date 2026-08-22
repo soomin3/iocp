@@ -5,10 +5,27 @@ CDBStatement::CDBStatement(SQLHDBC _ConnectionHandle) : m_StatementHandle(SQL_NU
 {
 	if (_ConnectionHandle == SQL_NULL_HDBC)
 	{
+		m_LastError = MakeDBError(EDBErrorCode::InvalidConnection, L"CDBStatement::CDBStatement", L"The connection handle is invalid");
 		return;
 	}
 
-	SQLAllocHandle(SQL_HANDLE_STMT, _ConnectionHandle, &m_StatementHandle);
+	const SQLRETURN Result = SQLAllocHandle(SQL_HANDLE_STMT, _ConnectionHandle, &m_StatementHandle);
+
+	if (!SQL_SUCCEEDED(Result))
+	{
+		m_StatementHandle = SQL_NULL_HSTMT;
+		m_LastError = ReadOdbcError(EDBErrorCode::StatementAllocationFailed, SQL_HANDLE_DBC, _ConnectionHandle, L"SQLAllocHandle(STMT)");
+		return;
+	}
+
+	constexpr SQLULEN QUERY_TIMEOUT_SECONDS = 5;
+	const SQLRETURN TimeoutResult = SQLSetStmtAttr(m_StatementHandle, SQL_ATTR_QUERY_TIMEOUT, reinterpret_cast<SQLPOINTER>(QUERY_TIMEOUT_SECONDS), 0);
+	if (!SQL_SUCCEEDED(TimeoutResult))
+	{
+		m_LastError = ReadOdbcError(EDBErrorCode::StatementAllocationFailed, SQL_HANDLE_STMT, m_StatementHandle, L"SQLSetStmtAttr(SQL_ATTR_QUERY_TIMEOUT)");
+		SQLFreeHandle(SQL_HANDLE_STMT, m_StatementHandle);
+		m_StatementHandle = SQL_NULL_HSTMT;
+	}
 }
 
 CDBStatement::~CDBStatement()
@@ -20,106 +37,91 @@ CDBStatement::~CDBStatement()
 	}
 }
 
-bool CDBStatement::BindInputWString(SQLUSMALLINT _Index, const std::wstring& _Value, SQLULEN _ColumnSize, SQLLEN& _Indicator)
+bool CDBStatement::BindParameter(
+	SQLUSMALLINT _Index,
+	SQLSMALLINT _InputOutputType,
+	SQLSMALLINT _ValueType,
+	SQLSMALLINT _ParameterType,
+	SQLULEN _ColumnSize,
+	SQLSMALLINT _DecimalDigits,
+	SQLPOINTER _Value,
+	SQLLEN _BufferLength,
+	SQLLEN* _Indicator)
 {
-	if (_Value.size() > _ColumnSize)
+	if (!IsValid())
 	{
 		return false;
-	}
-
-	if (_Indicator != SQL_NULL_DATA)
-	{
-		_Indicator = SQL_NTS;
 	}
 
 	const SQLRETURN Result = SQLBindParameter(
 		m_StatementHandle,
 		_Index,
-		SQL_PARAM_INPUT,
-		SQL_C_WCHAR,
-		SQL_WVARCHAR,
+		_InputOutputType,
+		_ValueType,
+		_ParameterType,
 		_ColumnSize,
-		0,
-		const_cast<wchar_t*>(_Value.c_str()),
-		static_cast<SQLLEN>((_Value.size() + 1) * sizeof(wchar_t)),
-		&_Indicator);
+		_DecimalDigits,
+		_Value,
+		_BufferLength,
+		_Indicator);
 
 	if (!SQL_SUCCEEDED(Result))
 	{
-		PrintDiagnostics(L"SQLBindParameter(input string)");
+		SetStatementError(EDBErrorCode::ParameterBindFailed, L"SQLBindParameter");
 		return false;
 	}
 
 	return true;
 }
 
-bool CDBStatement::BindOutputWString(SQLUSMALLINT _Index, wchar_t* _Buffer, SQLULEN _BufferCharacterCount, SQLLEN& _Indicator)
+bool CDBStatement::BindColumn(SQLUSMALLINT _Index, SQLSMALLINT _TargetType, SQLPOINTER _Value, SQLLEN _BufferLength, SQLLEN* _Indicator)
 {
-	if (_Buffer == nullptr || _BufferCharacterCount == 0)
+	if (!IsValid())
 	{
 		return false;
 	}
 
-	const SQLRETURN Result = SQLBindParameter(
-		m_StatementHandle,
-		_Index,
-		SQL_PARAM_OUTPUT,
-		SQL_C_WCHAR,
-		SQL_WVARCHAR,
-		_BufferCharacterCount - 1,
-		0,
-		_Buffer,
-		static_cast<SQLLEN>(_BufferCharacterCount * sizeof(wchar_t)),
-		&_Indicator);
+	const SQLRETURN Result = SQLBindCol(m_StatementHandle, _Index, _TargetType, _Value, _BufferLength, _Indicator);
 
 	if (!SQL_SUCCEEDED(Result))
 	{
-		PrintDiagnostics(L"SQLBindParameter(output string)");
+		SetStatementError(EDBErrorCode::ParameterBindFailed, L"SQLBindCol");
 		return false;
 	}
 
 	return true;
 }
 
-bool CDBStatement::BindColumnWString(SQLUSMALLINT _Index, wchar_t* _Buffer, SQLULEN _BufferCharacterCount, SQLLEN& _Indicator)
+bool CDBStatement::ExecuteDirect(const wstring& _Query)
 {
-	if (_Buffer == nullptr || _BufferCharacterCount == 0)
+	if (!IsValid() || _Query.empty())
 	{
 		return false;
 	}
 
-	const SQLRETURN Result = SQLBindCol(
-		m_StatementHandle,
-		_Index,
-		SQL_C_WCHAR,
-		_Buffer,
-		static_cast<SQLLEN>(_BufferCharacterCount * sizeof(wchar_t)),
-		&_Indicator);
+	const SQLRETURN Result = SQLExecDirectW(m_StatementHandle, (SQLWCHAR*)_Query.c_str(), SQL_NTS);
 
 	if (!SQL_SUCCEEDED(Result))
 	{
-		PrintDiagnostics(L"SQLBindCol(string)");
+		SetStatementError(EDBErrorCode::ExecuteFailed, L"SQLExecDirectW");
 		return false;
 	}
 
 	return true;
 }
 
-bool CDBStatement::ExecuteDirect(const wchar_t* _Query)
+bool CDBStatement::GetColumnCount(SQLSMALLINT& _ColumnCount)
 {
-	if (!IsValid() || _Query == nullptr)
+	if (!IsValid())
 	{
 		return false;
 	}
 
-	const SQLRETURN Result = SQLExecDirectW(
-		m_StatementHandle,
-		(SQLWCHAR*)_Query,
-		SQL_NTS);
+	const SQLRETURN Result = SQLNumResultCols(m_StatementHandle, &_ColumnCount);
 
 	if (!SQL_SUCCEEDED(Result))
 	{
-		PrintDiagnostics(L"SQLExecDirectW");
+		SetStatementError(EDBErrorCode::FetchFailed, L"SQLNumResultCols");
 		return false;
 	}
 
@@ -128,11 +130,16 @@ bool CDBStatement::ExecuteDirect(const wchar_t* _Query)
 
 SQLRETURN CDBStatement::Fetch()
 {
+	if (!IsValid())
+	{
+		return SQL_ERROR;
+	}
+
 	const SQLRETURN Result = SQLFetch(m_StatementHandle);
 
 	if (Result != SQL_NO_DATA && !SQL_SUCCEEDED(Result))
 	{
-		PrintDiagnostics(L"SQLFetch");
+		SetStatementError(EDBErrorCode::FetchFailed, L"SQLFetch");
 	}
 
 	return Result;
@@ -140,11 +147,16 @@ SQLRETURN CDBStatement::Fetch()
 
 SQLRETURN CDBStatement::NextResult()
 {
+	if (!IsValid())
+	{
+		return SQL_ERROR;
+	}
+
 	const SQLRETURN Result = SQLMoreResults(m_StatementHandle);
 
 	if (Result != SQL_NO_DATA && !SQL_SUCCEEDED(Result))
 	{
-		PrintDiagnostics(L"SQLMoreResults");
+		SetStatementError(EDBErrorCode::ResultCompletionFailed, L"SQLMoreResults");
 	}
 
 	return Result;
@@ -168,40 +180,7 @@ bool CDBStatement::CompleteResults()
 	}
 }
 
-void CDBStatement::PrintDiagnostics(const wchar_t* _Operation) const
+void CDBStatement::SetStatementError(EDBErrorCode _Code, const wchar_t* _Operation)
 {
-	if (!IsValid())
-	{
-		return;
-	}
-
-	for (SQLSMALLINT Record = 1; ; ++Record)
-	{
-		SQLWCHAR SqlState[6] = {};
-		SQLINTEGER NativeError = 0;
-		SQLWCHAR Message[1024] = {};
-		SQLSMALLINT MessageLength = 0;
-
-		const SQLRETURN Result = SQLGetDiagRecW(
-			SQL_HANDLE_STMT,
-			m_StatementHandle,
-			Record,
-			SqlState,
-			&NativeError,
-			Message,
-			static_cast<SQLSMALLINT>(std::size(Message)),
-			&MessageLength);
-
-		if (Result == SQL_NO_DATA || !SQL_SUCCEEDED(Result))
-		{
-			break;
-		}
-
-		std::wcerr
-			<< L"[ODBC] " << _Operation
-			<< L" SQLSTATE=" << reinterpret_cast<const wchar_t*>(SqlState)
-			<< L" NativeError=" << NativeError
-			<< L" Message=" << reinterpret_cast<const wchar_t*>(Message)
-			<< std::endl;
-	}
+	m_LastError = ReadOdbcError(_Code, SQL_HANDLE_STMT, m_StatementHandle, _Operation);
 }

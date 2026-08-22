@@ -8,9 +8,11 @@
 #include <thread>
 #include <vector>
 
+#include "PacketSender.h"
 #include "Session.h"
 
 class CPacketDispatcher;
+class CUserManager;
 
 using namespace std;
 
@@ -18,22 +20,25 @@ using namespace std;
 
 extern LPFN_ACCEPTEX g_AcceptEx;
 
-class CIOCPManager
+class CIOCPManager : public IPacketSender
 {
 public:
-	explicit CIOCPManager(CPacketDispatcher& _PacketDispatcher);
+	explicit CIOCPManager(
+		CPacketDispatcher& _PacketDispatcher,
+		CUserManager& _UserManager);
 	~CIOCPManager();
 
 	bool Init();
-	void Run();
+	bool Run();
 	void Stop();
 	void Release();
 
+	bool SendPacket(PacketBuffer _Packet) override;
 	void PrintStatus();
 
 private:
 	void WorkerThread(HANDLE _iocpHandle);
-	void InitAcceptEx(SOCKET _ListenSoceket);
+	bool InitAcceptEx(SOCKET _ListenSocket);
 
 	bool ProcessCompletion(CSession* _Session, DWORD _TransferredBytes, EIO_TYPE _IOType);
 	void TryRecycleSession(CSession* _Session);
@@ -42,10 +47,11 @@ private:
 
 	SOCKET m_ServerSocket;
 	HANDLE m_IOCPHandle;
+	bool m_WsaStarted;
 	vector<shared_ptr<CSession>> m_SessionPool;
 	CPacketDispatcher& m_PacketDispatcher;
 
 	atomic_bool m_IsRunning;
 	vector<thread> m_WorkerThreads;
-	//CUserManager m_UserManager;
+	CUserManager& m_UserManager;
 };

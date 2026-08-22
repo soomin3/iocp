@@ -5,23 +5,24 @@
 
 extern LPFN_ACCEPTEX g_AcceptEx;
 
-CSession::CSession(const CPacketDispatcher& _PacketDispatcher) :
-	m_PacketDispatcher(_PacketDispatcher),
+CSession::CSession(const CPacketDispatcher& _PacketDispatcher, uint32_t _SessionID) :
 	m_Socket(INVALID_SOCKET),
+	m_SessionID(_SessionID),
 	m_ReceivedBytes(0),
 	m_PendingIOCount(0),
 	m_State(ESessionState::DISCONNECTED),
+	m_Generation(0),
 	m_SendOffset(0),
+	m_QueuedSendBytes(0),
 	m_IsSending(false),
-	m_Generation(0)
+	m_PacketDispatcher(_PacketDispatcher),
+	m_LoginRequestPending(false)
 {
 	InitializeCriticalSection(&m_StateLock);
 	InitializeCriticalSection(&m_SendLock);
 	InitializeCriticalSection(&m_PendingIOLock);
 
 	InitializeConditionVariable(&m_PendingIOCCondition);
-
-	//m_Socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
 	memset(&m_AcceptOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 	memset(&m_ReadOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
@@ -59,6 +60,12 @@ uint64_t CSession::GetGeneration()
 	return m_Generation;
 }
 
+size_t CSession::GetQueuedSendBytes()
+{
+	CCSLock Lock(&m_SendLock);
+	return m_QueuedSendBytes;
+}
+
 void CSession::Init()
 {
 }
@@ -73,6 +80,7 @@ void CSession::Disconnect()
 	}
 
 	m_State = ESessionState::DISCONNECTING;
+	m_LoginRequestPending = false;
 
 	if (m_Socket != INVALID_SOCKET)
 	{
@@ -98,12 +106,13 @@ void CSession::Release()
 bool CSession::TryReset()
 {
 	CCSLock StateLock(&m_StateLock);
-	CCSLock SendLock(&m_SendLock);
 
-	if (m_State != ESessionState::DISCONNECTING || m_PendingIOCount.load() != 0)
+	if (m_State != ESessionState::DISCONNECTING || m_PendingIOCount.load() != 0 || m_LoginRequestPending || m_User)
 	{
 		return false;
 	}
+
+	CCSLock SendLock(&m_SendLock);
 
 	memset(&m_AcceptOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 	memset(&m_ReadOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
@@ -113,6 +122,7 @@ bool CSession::TryReset()
 
 	m_SendQueue.clear();
 	m_SendOffset = 0;
+	m_QueuedSendBytes = 0;
 	m_IsSending = false;
 
 	m_State = ESessionState::DISCONNECTED;
@@ -167,12 +177,7 @@ bool CSession::PostAccept(SOCKET _ListenSocket)
 bool CSession::PostRead()
 {
 	CCSLock Lock(&m_StateLock);
-	if (m_State != ESessionState::CONNECTED)
-	{
-		return false;
-	}
-
-	if (m_ReceivedBytes >= sizeof(m_ReadBuffer))
+	if (m_State != ESessionState::CONNECTED || m_ReceivedBytes >= sizeof(m_ReadBuffer))
 	{
 		return false;
 	}
@@ -181,7 +186,7 @@ bool CSession::PostRead()
 
 	WSABUF wsaBuf;
 	wsaBuf.buf = m_ReadBuffer + m_ReceivedBytes;
-	wsaBuf.len = sizeof(m_ReadBuffer) - m_ReceivedBytes;
+	wsaBuf.len = static_cast<ULONG>(sizeof(m_ReadBuffer) - m_ReceivedBytes);
 
 	DWORD bytesReceived = 0;
 	DWORD flags = 0;
@@ -212,6 +217,7 @@ bool CSession::CompleteAccept()
 
 	++m_Generation;
 	m_State = ESessionState::CONNECTED;
+	m_LoginRequestPending = false;
 
 	return true;
 }
@@ -225,7 +231,6 @@ bool CSession::Send(const void* _Data, size_t _Size, uint64_t _Generation)
 
 	bool StartWrite = false;
 
-	//임계 영역 구분
 	{
 		CCSLock StateLock(&m_StateLock);
 		if (m_State != ESessionState::CONNECTED || m_Generation != _Generation)
@@ -233,11 +238,15 @@ bool CSession::Send(const void* _Data, size_t _Size, uint64_t _Generation)
 			return false;
 		}
 
-		CCSLock Lock(&m_SendLock);
+		CCSLock SendLock(&m_SendLock);
+		if (_Size > MAX_QUEUED_SEND_BYTES || m_QueuedSendBytes > MAX_QUEUED_SEND_BYTES - _Size)
+		{
+			return false;
+		}
 
-		const char* begin = static_cast<const char*>(_Data);
-
-		m_SendQueue.emplace_back(begin, begin + _Size);
+		const char* Begin = static_cast<const char*>(_Data);
+		m_SendQueue.emplace_back(Begin, Begin + _Size);
+		m_QueuedSendBytes += _Size;
 		if (!m_IsSending)
 		{
 			m_IsSending = true;
@@ -316,6 +325,7 @@ bool CSession::OnSend(DWORD _TransferredBytes)
 
 		if (m_SendOffset == Packet.size())
 		{
+			m_QueuedSendBytes -= Packet.size();
 			m_SendQueue.pop_front();
 			m_SendOffset = 0;
 		}
@@ -335,47 +345,53 @@ bool CSession::OnSend(DWORD _TransferredBytes)
 
 bool CSession::OnRecv(DWORD _TransferredBytes)
 {
-	const size_t FreeBytes = sizeof(m_ReadBuffer) - m_ReceivedBytes;
-
-	if (_TransferredBytes > FreeBytes)
+	if (_TransferredBytes == 0 || _TransferredBytes > sizeof(m_ReadBuffer) - m_ReceivedBytes)
 	{
 		return false;
 	}
 
 	m_ReceivedBytes += _TransferredBytes;
+	return ProcessPackets();
+}
 
+bool CSession::ProcessPackets()
+{
 	if (m_ReceivedBytes < sizeof(PacketHeader))
 	{
 		return true;
 	}
 
-	size_t bytesProcessed = 0;
-	while (m_ReceivedBytes - bytesProcessed >= sizeof(PacketHeader))
+	size_t BytesProcessed = 0;
+	while (m_ReceivedBytes - BytesProcessed >= sizeof(PacketHeader))
 	{
-		PacketHeader header = {};
-		memcpy(&header, m_ReadBuffer + bytesProcessed, sizeof(PacketHeader));
+		PacketHeader Header{};
+		memcpy(&Header, m_ReadBuffer + BytesProcessed, sizeof(Header));
 
-		if (header.packetSize < sizeof(PacketHeader) || header.packetSize > sizeof(m_ReadBuffer))
+		if (Header.packetSize < sizeof(PacketHeader) ||	Header.packetSize > sizeof(m_ReadBuffer))
 		{
 			return false;
 		}
 
-		if (m_ReceivedBytes - bytesProcessed < header.packetSize)
+		if (m_ReceivedBytes - BytesProcessed < Header.packetSize)
 		{
 			break;
 		}
 
-		if (!m_PacketDispatcher.Dispatch(*this, m_ReadBuffer + bytesProcessed, header))
+		SPacketContext Context;
+		Context.Source = EPacketSource::CLIENT;
+		Context.Session = this;
+
+		if (!m_PacketDispatcher.Dispatch(Context, m_ReadBuffer + BytesProcessed, Header))
 		{
 			return false;
 		}
 
-		bytesProcessed += header.packetSize;
+		BytesProcessed += Header.packetSize;
 	}
 
-	const size_t remainingBytes = m_ReceivedBytes - bytesProcessed;
-	memmove(m_ReadBuffer, m_ReadBuffer + bytesProcessed, remainingBytes);
-	m_ReceivedBytes = static_cast<DWORD>(remainingBytes);
+	const size_t RemainingBytes = m_ReceivedBytes - BytesProcessed;
+	memmove(m_ReadBuffer, m_ReadBuffer + BytesProcessed, RemainingBytes);
+	m_ReceivedBytes = static_cast<DWORD>(RemainingBytes);
 
 	return true;
 }
@@ -402,5 +418,84 @@ void CSession::WaitForPendingIO()
 	while (m_PendingIOCount.load() != 0)
 	{
 		SleepConditionVariableCS(&m_PendingIOCCondition, &m_PendingIOLock, INFINITE);
+	}
+}
+
+bool CSession::CompleteLogin(const shared_ptr<CUser>& _User, uint64_t _Generation)
+{
+	if(!_User)
+	{
+		return false;
+	}
+
+	CCSLock Lock(&m_StateLock);
+
+	if (m_State != ESessionState::CONNECTED || m_Generation != _Generation ||
+		!m_LoginRequestPending || m_User)
+	{
+		return false;
+	}
+
+	m_User = _User;
+	m_LoginRequestPending = false;
+
+	return true;
+}
+
+bool CSession::IsAuthenticated(const shared_ptr<CUser>& _User, uint64_t _Generation)
+{
+	if (!_User)
+	{
+		return false;
+	}
+
+	CCSLock Lock(&m_StateLock);
+	return m_State == ESessionState::CONNECTED &&
+		m_Generation == _Generation &&
+		!m_LoginRequestPending &&
+		m_User == _User;
+}
+
+shared_ptr<CUser> CSession::GetUser()
+{
+	CCSLock Lock(&m_StateLock);
+	return m_User;
+}
+
+shared_ptr<CUser> CSession::DetachUser()
+{
+	CCSLock Lock(&m_StateLock);
+
+	return move(m_User);
+}
+
+bool CSession::TryBeginLogin(uint64_t _Generation)
+{
+	CCSLock Lock(&m_StateLock);
+
+	if (m_State != ESessionState::CONNECTED || m_Generation != _Generation || m_LoginRequestPending || m_User)
+	{
+		return false;
+	}
+
+	m_LoginRequestPending = true;
+	return true;
+}
+
+bool CSession::IsLoginPending(uint64_t _Generation)
+{
+	CCSLock Lock(&m_StateLock);
+
+	return m_State == ESessionState::CONNECTED &&
+		m_Generation == _Generation && m_LoginRequestPending && !m_User;
+}
+
+void CSession::CancelLogin(uint64_t _Generation)
+{
+	CCSLock Lock(&m_StateLock);
+
+	if (m_Generation == _Generation && m_LoginRequestPending)
+	{
+		m_LoginRequestPending = false;
 	}
 }

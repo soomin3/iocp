@@ -1,51 +1,57 @@
 #include "pch.h"
 #include "AuthProcedures.h"
+#include "ProcedureBinder.h"
 
-CProcedure_UserLogin::ResultType CProcedure_UserLogin::Execute(SQLHDBC _ConnectionHandle)
+const wchar_t* CProcedure_UserLogin::GetProcedureName() const
 {
-	ResultType Result;
-	wstring ID;
-	wstring PW;
+	return L"dbo.tp_UserLogin";
+}
 
-	if (!Utf8ToWide(m_ID, ID) || !Utf8ToWide(m_PW, PW))
+bool CProcedure_UserLogin::BindParameters(CProcedureBinder& _Binder)
+{
+	return _Binder.Bind(ResultCode) &&
+		_Binder.Bind(ID) &&
+		_Binder.Bind(PW) &&
+		_Binder.Bind(AccountID) &&
+		_Binder.Bind(Nickname);
+}
+
+bool CProcedure_UserLogin::ValidateResult(wstring& _ErrorMessage)
+{
+	if (ResultCode.IsNull())
 	{
-		return Result;
+		_ErrorMessage = L"dbo.tp_UserLogin returned a NULL result code";
+		return false;
 	}
 
-	int32_t ResultCode = -1;
-	int64_t AccountID = 0;
-
-	SQLLEN ResultCodeIndicator = 0;
-	SQLLEN IDIndicator = SQL_NTS;
-	SQLLEN PWIndicator = SQL_NTS;
-	SQLLEN AccountIDIndicator = 0;
-
-	const bool Executed = ExecuteProcedure(_ConnectionHandle, L"{? = CALL dbo.tp_UserLogin(?, ?, ?)}", [&](CDBStatement& _Statement)
-		{
-			return
-				_Statement.BindOutput(1, ResultCode, ResultCodeIndicator) &&
-				_Statement.BindInputWString(2, ID, 64, IDIndicator) &&
-				_Statement.BindInputWString(3, PW, 64, PWIndicator) &&
-				_Statement.BindOutput(4, AccountID, AccountIDIndicator);
-		});
-
-	if (!Executed || ResultCodeIndicator == SQL_NULL_DATA)
+	if (ResultCode.Value == 0 && AccountID.IsNull())
 	{
-		return Result;
+		_ErrorMessage = L"dbo.tp_UserLogin returned a NULL account ID for a successful login";
+		return false;
 	}
 
-	if (ResultCode == 0 && AccountIDIndicator == SQL_NULL_DATA)
+	return true;
+}
+
+const wchar_t* CProcedure_CreateNickname::GetProcedureName() const
+{
+	return L"dbo.tp_UserCreateNickname";
+}
+
+bool CProcedure_CreateNickname::BindParameters(CProcedureBinder& _Binder)
+{
+	return _Binder.Bind(ResultCode) &&
+		_Binder.Bind(AccountID) &&
+		_Binder.Bind(Nickname);
+}
+
+bool CProcedure_CreateNickname::ValidateResult(wstring& _ErrorMessage)
+{
+	if (ResultCode.IsNull())
 	{
-		return Result;
+		_ErrorMessage = L"dbo.tp_UserCreateNickname returned a NULL result code";
+		return false;
 	}
 
-	Result.Executed = true;
-	Result.ResultCode = ResultCode;
-
-	if (ResultCode == 0)
-	{
-		Result.AccountID = AccountID;
-	}
-
-	return Result;
+	return true;
 }
