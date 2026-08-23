@@ -32,15 +32,12 @@ logs/
 *.sql
 tests/
 *.txt
-*.md
 
 ## 시스템 파일
 Thumbs.db
 Desktop.ini
 
 ## 개인 파일들
-PROJECT_CONTEXT.md
-AGENTS.md
 DBConfig.txt
 **/DBConfig.txt
 *.pfx
