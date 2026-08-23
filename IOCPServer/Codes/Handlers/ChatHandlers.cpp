@@ -58,7 +58,13 @@ bool CChatHandler::Handle(const SPacketContext& _Context, const char* _Buffer, c
 		return SendChatError(Session, Generation, EChatError::INVALID_MESSAGE);
 	}
 
-	if (!m_WorldChat.Submit(User, Session, Generation, Message))
+	const EWorldChatResult BroadcastResult = m_WorldChat.Broadcast(User, Session, Generation, Message);
+	if (BroadcastResult == EWorldChatResult::LOG_FAILURE)
+	{
+		return SendChatError(Session, Generation, EChatError::LOG_FAILURE);
+	}
+
+	if (BroadcastResult != EWorldChatResult::SUCCESS)
 	{
 		return SendChatError(Session, Generation, EChatError::SERVER_BUSY);
 	}

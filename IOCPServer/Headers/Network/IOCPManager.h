@@ -23,9 +23,7 @@ extern LPFN_ACCEPTEX g_AcceptEx;
 class CIOCPManager : public IPacketSender
 {
 public:
-	explicit CIOCPManager(
-		CPacketDispatcher& _PacketDispatcher,
-		CUserManager& _UserManager);
+	explicit CIOCPManager(CPacketDispatcher& _PacketDispatcher, CUserManager& _UserManager);
 	~CIOCPManager();
 
 	bool Init();

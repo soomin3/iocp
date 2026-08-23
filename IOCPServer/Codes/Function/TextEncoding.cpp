@@ -19,7 +19,7 @@ bool Utf8ToWide(const string& _Source, wstring& _Destination)
 	return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, _Source.data(), static_cast<int>(_Source.size()), _Destination.data(), Length) == Length;
 }
 
-bool WideToUtf8(const std::wstring& _Source, std::string& _Destination)
+bool WideToUtf8(const wstring& _Source, string& _Destination)
 {
 	if (_Source.empty())
 	{

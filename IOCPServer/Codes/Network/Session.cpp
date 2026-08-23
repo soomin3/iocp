@@ -430,8 +430,7 @@ bool CSession::CompleteLogin(const shared_ptr<CUser>& _User, uint64_t _Generatio
 
 	CCSLock Lock(&m_StateLock);
 
-	if (m_State != ESessionState::CONNECTED || m_Generation != _Generation ||
-		!m_LoginRequestPending || m_User)
+	if (m_State != ESessionState::CONNECTED || m_Generation != _Generation || !m_LoginRequestPending || m_User)
 	{
 		return false;
 	}
@@ -450,10 +449,7 @@ bool CSession::IsAuthenticated(const shared_ptr<CUser>& _User, uint64_t _Generat
 	}
 
 	CCSLock Lock(&m_StateLock);
-	return m_State == ESessionState::CONNECTED &&
-		m_Generation == _Generation &&
-		!m_LoginRequestPending &&
-		m_User == _User;
+	return m_State == ESessionState::CONNECTED && m_Generation == _Generation && !m_LoginRequestPending && m_User == _User;
 }
 
 shared_ptr<CUser> CSession::GetUser()
@@ -486,8 +482,7 @@ bool CSession::IsLoginPending(uint64_t _Generation)
 {
 	CCSLock Lock(&m_StateLock);
 
-	return m_State == ESessionState::CONNECTED &&
-		m_Generation == _Generation && m_LoginRequestPending && !m_User;
+	return m_State == ESessionState::CONNECTED && m_Generation == _Generation && m_LoginRequestPending && !m_User;
 }
 
 void CSession::CancelLogin(uint64_t _Generation)

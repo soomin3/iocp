@@ -233,10 +233,8 @@ void CIOCPManager::PrintStatus()
 		<< '\n';
 }
 
-CIOCPManager::CIOCPManager(
-	CPacketDispatcher& _PacketDispatcher,
-	CUserManager& _UserManager) :
-	m_ServerSocket(INVALID_SOCKET),
+CIOCPManager::CIOCPManager(CPacketDispatcher& _PacketDispatcher,CUserManager& _UserManager)
+	: m_ServerSocket(INVALID_SOCKET),
 	m_IOCPHandle(nullptr),
 	m_WsaStarted(false),
 	m_PacketDispatcher(_PacketDispatcher),
@@ -277,12 +275,7 @@ bool CIOCPManager::Init()
 	}
 
 	BOOL ExclusiveAddressUse = TRUE;
-	if (setsockopt(
-		m_ServerSocket,
-		SOL_SOCKET,
-		SO_EXCLUSIVEADDRUSE,
-		reinterpret_cast<const char*>(&ExclusiveAddressUse),
-		sizeof(ExclusiveAddressUse)) == SOCKET_ERROR)
+	if (setsockopt(m_ServerSocket, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&ExclusiveAddressUse), sizeof(ExclusiveAddressUse)) == SOCKET_ERROR)
 	{
 		printf("SO_EXCLUSIVEADDRUSE error: %d\n", WSAGetLastError());
 		Release();
@@ -315,11 +308,7 @@ bool CIOCPManager::Init()
 		return false;
 	}
 
-	if (CreateIoCompletionPort(
-		reinterpret_cast<HANDLE>(m_ServerSocket),
-		m_IOCPHandle,
-		0,
-		0) == nullptr)
+	if (CreateIoCompletionPort(reinterpret_cast<HANDLE>(m_ServerSocket), m_IOCPHandle, 0, 0) == nullptr)
 	{
 		printf("Listen socket IOCP association error: %d\n", GetLastError());
 		Release();
@@ -337,8 +326,7 @@ bool CIOCPManager::Init()
 
 bool CIOCPManager::Run()
 {
-	if (m_IOCPHandle == nullptr || m_ServerSocket == INVALID_SOCKET ||
-		m_IsRunning.exchange(true))
+	if (m_IOCPHandle == nullptr || m_ServerSocket == INVALID_SOCKET || m_IsRunning.exchange(true))
 	{
 		return false;
 	}
@@ -415,9 +403,7 @@ bool CIOCPManager::SendPacket(PacketBuffer _Packet)
 
 	PacketHeader Header;
 	memcpy(&Header, _Packet.data(), sizeof(Header));
-	if (Header.packetSize != _Packet.size() ||
-		(Header.packetID != PacketID::DS_LOGIN_RES &&
-			Header.packetID != PacketID::DS_CREATE_NICKNAME_RES))
+	if (Header.packetSize != _Packet.size())
 	{
 		return false;
 	}
@@ -425,11 +411,7 @@ bool CIOCPManager::SendPacket(PacketBuffer _Packet)
 	unique_ptr<PacketBuffer> Packet = make_unique<PacketBuffer>(move(_Packet));
 	PacketBuffer* PostedPacket = Packet.release();
 
-	if (!PostQueuedCompletionStatus(
-		m_IOCPHandle,
-		0,
-		reinterpret_cast<ULONG_PTR>(PostedPacket),
-		nullptr))
+	if (!PostQueuedCompletionStatus(m_IOCPHandle, 0, reinterpret_cast<ULONG_PTR>(PostedPacket), nullptr))
 	{
 		delete PostedPacket;
 		return false;

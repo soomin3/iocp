@@ -32,13 +32,6 @@ bool CServer::Init()
 	}
 	cout << "Chat Log Manager Start Success" << endl;
 
-	if (!m_WorldChat.Start())
-	{
-		cout << "World Chat Start Failed" << endl;
-		return false;
-	}
-	cout << "World Chat Start Success" << endl;
-
 	if (!m_AuthHandlers.RegisterAll(m_PacketDispatcher))
 	{
 		cout << "Auth Handler Register Failed" << endl;
@@ -81,7 +74,6 @@ void CServer::Run()
 
 	m_DBManager.StopWorker();
 	m_IOCPManager.Stop();
-	m_WorldChat.Stop();
 	m_ChatLogManager.Stop();
 	m_IOCPManager.Release();
 }
@@ -110,7 +102,6 @@ void CServer::ProcessConsoleCommand()
 			cout << "dbQueue=" << m_DBManager.GetPendingJobCount()
 				<< ", activeUsers=" << m_UserManager.GetUserCount()
 				<< ", worldChatAudience=" << m_WorldChat.GetAudienceCount()
-				<< ", worldChatQueue=" << m_WorldChat.GetQueueSize()
 				<< ", worldChatProcessed=" << m_WorldChat.GetProcessedCount()
 				<< ", worldChatRejected=" << m_WorldChat.GetRejectedCount()
 				<< ", logQueue=" << m_ChatLogManager.GetQueueSize()

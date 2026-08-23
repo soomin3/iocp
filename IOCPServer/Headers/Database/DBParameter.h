@@ -120,6 +120,12 @@ template<typename T, EDBParameterDirection Direction>
 class TDBScalarParameter final : public CDBParameter
 {
 public:
+	TDBScalarParameter() = default;
+	explicit TDBScalarParameter(const T& _Value)
+	{
+		*this = _Value;
+	}
+
 	T Value{};
 
 	TDBScalarParameter& operator=(const T& _Value)
@@ -148,9 +154,7 @@ public:
 	{
 		ClearError();
 
-		if constexpr (
-			Direction == EDBParameterDirection::Input ||
-			Direction == EDBParameterDirection::InputOutput)
+		if constexpr (Direction == EDBParameterDirection::Input || Direction == EDBParameterDirection::InputOutput)
 		{
 			if (!m_IsAssigned)
 			{
@@ -190,6 +194,12 @@ template<size_t MaxLength, EDBParameterDirection Direction>
 class TDBStringParameter final : public CDBParameter
 {
 public:
+	TDBStringParameter() = default;
+	explicit TDBStringParameter(string _Value)
+	{
+		*this = move(_Value);
+	}
+
 	string Value;
 
 	TDBStringParameter& operator=(string _Value)

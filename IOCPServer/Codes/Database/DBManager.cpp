@@ -196,9 +196,7 @@ bool CDBManager::Connect(const string& _ConfigFilePath, const string& _DatabaseN
 	}
 
 	const wstring Server = WideFields[0] + L"," + WideFields[1];
-	wstring ConnectionString = L"Driver={" + wstring(DB_DRIVER) + L"};Server=" +
-		EscapeOdbcValue(Server) + L";Database=" + EscapeOdbcValue(DatabaseName) +
-		L";" + DB_SECURITY_OPTIONS;
+	wstring ConnectionString = L"Driver={" + wstring(DB_DRIVER) + L"};Server=" + EscapeOdbcValue(Server) + L";Database=" + EscapeOdbcValue(DatabaseName) + L";" + DB_SECURITY_OPTIONS;
 
 	if (WideFields[2].empty())
 	{
@@ -296,8 +294,7 @@ bool CDBManager::Enqueue(PacketBuffer _Request)
 	memcpy(&Header, _Request.data(), sizeof(Header));
 
 	const size_t HandlerIndex = static_cast<size_t>(Header.packetID);
-	if (Header.packetSize != _Request.size() || HandlerIndex >= m_RequestHandlers.size() ||
-		m_RequestHandlers[HandlerIndex] == nullptr)
+	if (Header.packetSize != _Request.size() || HandlerIndex >= m_RequestHandlers.size() || m_RequestHandlers[HandlerIndex] == nullptr)
 	{
 		return false;
 	}
@@ -349,10 +346,6 @@ void CDBManager::WorkerThread()
 		memcpy(&Header, Request.data(), sizeof(Header));
 
 		const size_t HandlerIndex = static_cast<size_t>(Header.packetID);
-		if (Header.packetSize != Request.size() || HandlerIndex >= m_RequestHandlers.size())
-		{
-			continue;
-		}
 
 		IDBRequestHandler* Handler = m_RequestHandlers[HandlerIndex];
 		if (Handler == nullptr)
@@ -360,7 +353,13 @@ void CDBManager::WorkerThread()
 			continue;
 		}
 
-		if (!Handler->Handle(m_Connection, *m_ResponseSender, Request.data(), Header))
+		PacketBuffer Response = Handler->Handle(m_Connection, Request.data(), Header);
+
+		if (!Response.empty())
+		{
+			m_ResponseSender->SendPacket(move(Response));
+		}
+		else
 		{
 			cout << "DB request handling failed: " << static_cast<uint16_t>(Header.packetID) << '\n';
 		}

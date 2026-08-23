@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "AuthHandlers.h"
-
 #include "DBManager.h"
 #include "Packet.h"
 #include "PacketSender.h"

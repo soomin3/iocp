@@ -78,18 +78,10 @@ bool CDBConnection::Connect(const wstring& _ConnectionString)
 	SQLSMALLINT OutConnectionLength = 0;
 	constexpr SQLULEN LOGIN_TIMEOUT_SECONDS = 5;
 
-	const SQLRETURN TimeoutResult = SQLSetConnectAttr(
-		m_ConnectionHandle,
-		SQL_ATTR_LOGIN_TIMEOUT,
-		reinterpret_cast<SQLPOINTER>(LOGIN_TIMEOUT_SECONDS),
-		0);
+	const SQLRETURN TimeoutResult = SQLSetConnectAttr(m_ConnectionHandle, SQL_ATTR_LOGIN_TIMEOUT, reinterpret_cast<SQLPOINTER>(LOGIN_TIMEOUT_SECONDS), 0);
 	if (!SQL_SUCCEEDED(TimeoutResult))
 	{
-		m_LastError = ReadOdbcError(
-			EDBErrorCode::InvalidConnection,
-			SQL_HANDLE_DBC,
-			m_ConnectionHandle,
-			L"SQLSetConnectAttr(SQL_ATTR_LOGIN_TIMEOUT)");
+		m_LastError = ReadOdbcError(EDBErrorCode::InvalidConnection, SQL_HANDLE_DBC, m_ConnectionHandle, L"SQLSetConnectAttr(SQL_ATTR_LOGIN_TIMEOUT)");
 		return false;
 	}
 

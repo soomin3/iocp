@@ -1,7 +1,23 @@
 #pragma once
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
+#include <vector>
 #include "Myinclude.h"
+
+using namespace std;
+
+using PacketBuffer = vector<char>;
+
+template<typename PACKET>
+PacketBuffer MakePacketBuffer(const PACKET& _Packet)
+{
+	static_assert(is_trivially_copyable_v<PACKET>);
+
+	PacketBuffer Buffer(sizeof(PACKET));
+	memcpy(Buffer.data(), &_Packet, sizeof(PACKET));
+	return Buffer;
+}
 
 enum class PacketID : uint16_t
 {
