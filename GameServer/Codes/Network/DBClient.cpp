@@ -64,16 +64,24 @@ bool CDBClient::StartWorker(IPacketSender& _ResponseSender)
 	m_WsaStarted = true;
 	m_StopRequested = false;
 	m_ResponseSender = &_ResponseSender;
-	if (!Connect())
+	m_NextConnectAttempt = 0;
+	if (!m_Context.Open())
 	{
 		StopWorker();
 		return false;
 	}
+	std::promise<bool> Started;
+	std::future<bool> Ready = Started.get_future();
 	try
 	{
-		m_Worker = thread(&CDBClient::WorkerThread, this);
+		m_Worker = thread(&CDBClient::WorkerThread, this, move(Started));
 	}
 	catch (const system_error&)
+	{
+		StopWorker();
+		return false;
+	}
+	if (!Ready.get())
 	{
 		StopWorker();
 		return false;
@@ -86,12 +94,13 @@ void CDBClient::StopWorker()
 	{
 		lock_guard<mutex> Lock(m_Lock);
 		m_StopRequested = true;
-		// Only the worker closes the socket; shutdown interrupts its current I/O.
-		if (m_Socket != INVALID_SOCKET) shutdown(m_Socket, SD_BOTH);
 	}
-	m_Condition.notify_all();
-	if (m_Worker.joinable()) m_Worker.join();
-	Disconnect();
+	if (m_Worker.joinable())
+	{
+		m_Context.Wake();
+		m_Worker.join();
+	}
+	m_Context.Close();
 	m_ResponseSender = nullptr;
 	if (m_WsaStarted)
 	{
@@ -100,57 +109,30 @@ void CDBClient::StopWorker()
 	}
 }
 
-bool CDBClient::Connect()
+DBIocp::CTask CDBClient::Connect()
 {
-	if (GetTickCount64() < m_NextConnectAttempt) return false;
+	if (IsStopping() || GetTickCount64() < m_NextConnectAttempt) co_return false;
 	m_NextConnectAttempt = GetTickCount64() + 1000;
-	SOCKET Socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (Socket == INVALID_SOCKET) return false;
-	{
-		lock_guard<mutex> Lock(m_Lock);
-		if (m_StopRequested)
-		{
-			closesocket(Socket);
-			return false;
-		}
-		m_Socket = Socket;
-	}
-	u_long NonBlocking = 1;
-	bool Connected = ioctlsocket(Socket, FIONBIO, &NonBlocking) == 0;
+	m_Socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	if (m_Socket == INVALID_SOCKET) co_return false;
 	sockaddr_in Address{};
 	Address.sin_family = AF_INET;
 	Address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	Address.sin_port = htons(DBTransport::PORT);
-	if (Connected && connect(Socket, reinterpret_cast<sockaddr*>(&Address), sizeof(Address)) != 0)
-	{
-		Connected = WSAGetLastError() == WSAEWOULDBLOCK;
-		if (Connected)
-		{
-			fd_set WriteSet;
-			fd_set ErrorSet;
-			FD_ZERO(&WriteSet);
-			FD_SET(Socket, &WriteSet);
-			ErrorSet = WriteSet;
-			timeval Timeout{1, 0};
-			int Error = 0;
-			int ErrorSize = sizeof(Error);
-			Connected = select(0, nullptr, &WriteSet, &ErrorSet, &Timeout) > 0 &&
-				FD_ISSET(Socket, &WriteSet) && !FD_ISSET(Socket, &ErrorSet) &&
-				getsockopt(Socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&Error), &ErrorSize) == 0 && Error == 0;
-		}
-	}
-	NonBlocking = 0;
-	if (!Connected || ioctlsocket(Socket, FIONBIO, &NonBlocking) != 0 || !DBTransport::ConfigureSocket(Socket))
+	const bool Connected = DBTransport::ConfigureSocket(m_Socket) &&
+		co_await DBIocp::Connect(m_Context, m_Socket, Address, GetTickCount64() + 1000);
+	if (!Connected || IsStopping())
 	{
 		Disconnect();
-		return false;
+		co_return false;
 	}
-	return true;
+	co_return true;
 }
 
 void CDBClient::Disconnect()
 {
-	lock_guard<mutex> Lock(m_Lock);
+	// Socket lifetime belongs to the IOCP worker; cancellation is drained first.
+	assert(m_Context.PendingCount() == 0);
 	if (m_Socket != INVALID_SOCKET)
 	{
 		closesocket(m_Socket);
@@ -167,9 +149,11 @@ bool CDBClient::Submit(PacketBuffer _Request)
 	{
 		lock_guard<mutex> Lock(m_Lock);
 		if (m_StopRequested || m_Requests.size() >= MAX_JOB_QUEUE_SIZE) return false;
+		// Publish the wake while holding the queue lock. The worker observes the
+		// request only after it has been inserted, and a failed wake accepts nothing.
+		if (m_RequestContinuation && !m_Context.Wake()) return false;
 		m_Requests.push(move(_Request));
 	}
-	m_Condition.notify_one();
 	return true;
 }
 
@@ -186,24 +170,65 @@ uint64_t CDBClient::CreateRequestID()
 	return RequestID;
 }
 
-void CDBClient::WorkerThread()
+bool CDBClient::IsStopping()
 {
+	lock_guard<mutex> Lock(m_Lock);
+	return m_StopRequested;
+}
+
+bool CDBClient::SRequestAwaiter::await_suspend(std::coroutine_handle<> _Continuation) const
+{
+	lock_guard<mutex> Lock(Client.m_Lock);
+	if (Client.m_StopRequested || !Client.m_Requests.empty()) return false;
+	Client.m_RequestContinuation = _Continuation;
+	return true;
+}
+
+void CDBClient::WorkerThread(std::promise<bool> _Started)
+{
+	m_Task = ProcessRequests(_Started);
+	m_Task.Resume();
+	while (!m_Task.IsDone())
+	{
+		if (IsStopping()) m_Context.CancelAll();
+		m_Context.RunOne();
+		std::coroutine_handle<> Continuation;
+		{
+			lock_guard<mutex> Lock(m_Lock);
+			if (m_RequestContinuation && (m_StopRequested || !m_Requests.empty()))
+			{
+				Continuation = std::exchange(m_RequestContinuation, {});
+			}
+		}
+		if (Continuation) Continuation.resume();
+	}
+	assert(m_Context.PendingCount() == 0);
+	m_Task.Reset();
+	Disconnect();
+}
+
+DBIocp::CTask CDBClient::ProcessRequests(std::promise<bool>& _Started)
+{
+	const bool Connected = co_await Connect();
+	_Started.set_value(Connected);
+	if (!Connected) co_return false;
+
 	while (true)
 	{
+		co_await SRequestAwaiter{ *this };
 		PacketBuffer Request;
 		bool Stopping = false;
 		{
-			unique_lock<mutex> Lock(m_Lock);
-			m_Condition.wait(Lock, [this] { return m_StopRequested || !m_Requests.empty(); });
-			if (m_Requests.empty()) return;
+			lock_guard<mutex> Lock(m_Lock);
+			if (m_Requests.empty()) co_return true;
 			Stopping = m_StopRequested;
 			Request = move(m_Requests.front());
 			m_Requests.pop();
 		}
 		PacketBuffer Response;
-		if (Stopping || (m_Socket == INVALID_SOCKET && !Connect()) ||
-			!DBTransport::SendPacket(m_Socket, Request) ||
-			!DBTransport::ReceivePacket(m_Socket, Response, false) || !MatchesRequest(Request, Response))
+		if (Stopping || (m_Socket == INVALID_SOCKET && !co_await Connect()) ||
+			!co_await DBIocp::SendPacket(m_Context, m_Socket, Request) ||
+			!co_await DBIocp::ReceivePacket(m_Context, m_Socket, Response, false) || !MatchesRequest(Request, Response))
 		{
 			Disconnect();
 			// Never replay an uncertain DB write after a transport failure.

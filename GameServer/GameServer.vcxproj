@@ -240,5 +240,6 @@
     <ClCompile Include="Codes\Network\DBClient.cpp" />
     <ClInclude Include="Headers\Network\DBClient.h" />
     <ClInclude Include="..\Common\Network\DBTransport.h" />
+    <ClInclude Include="..\Common\Network\DBIocp.h" />
   </ItemGroup>
 </Project>

@@ -56,8 +56,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Codes\main.cpp" />
+    <ClCompile Include="Codes\DBServer.cpp" />
     <ClCompile Include="Codes\OLEDBDatabase.cpp" />
+    <ClInclude Include="Headers\DBServer.h" />
     <ClInclude Include="Headers\OLEDBDatabase.h" />
+    <ClInclude Include="..\Common\Network\DBIocp.h" />
+    <ClInclude Include="..\Common\Network\DBTransport.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resource\DBConfig.example.txt" />

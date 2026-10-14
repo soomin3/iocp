@@ -131,5 +131,6 @@
     <ClInclude Include="Headers\Network\DBClient.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Headers\Network\IOTask.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\Common\Network\DBTransport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="..\Common\Network\DBIocp.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
 </Project>

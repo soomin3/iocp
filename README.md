@@ -13,6 +13,7 @@ Windows IOCP 게임 서버와 SQL Server 전용 DB 서버를 TCP로 연결한 C+
 - 세션 generation을 이용한 이전 연결의 늦은 완료 무효화
 - 객체형 패킷 처리기와 로그인 상태 검증
 - SD/DS 내부 패킷을 사용하는 비동기 DB 요청·응답 파이프라인
+- `ConnectEx`·`AcceptEx`와 IOCP 코루틴 기반 서버 간 TCP 통신
 - 별도 DBServer의 OLE DB stored procedure 호출과 타입별 파라미터 바인딩
 - 중복 로그인 차단과 닉네임 유일성 처리
 - 순차 처리되는 월드 채팅과 활성 사용자 브로드캐스트
@@ -31,9 +32,9 @@ TCP bytes
   → PacketDispatcher
       ├─ 로그인/닉네임
       │   → SD 요청 패킷
-      │   → GameServer DB 요청 큐와 통신 워커
-      │   → TCP 127.0.0.1:8695 → DBServer
-      │   → OLE DB stored procedure
+      │   → GameServer DB 요청 큐와 전용 IOCP 코루틴
+      │   → TCP 127.0.0.1:8695 → DBServer IOCP 코루틴
+      │   → 별도 DB 작업 스레드 → OLE DB stored procedure
       │   → DS 응답 패킷
       │   → TCP 응답 → GameServer IOCP completion queue
       │   → Session/User 상태 검증 후 응답
@@ -55,6 +56,8 @@ TCP bytes
 `GameServer`의 수신 루프는 `co_await`로 `WSARecv` 완료를 기다리고, 기존 IOCP 워커에서 재개되어 패킷을 처리한 뒤 다음 수신을 제출합니다. 즉시 성공한 수신도 IOCP 완료에서 한 번만 재개하며, 실패·취소 완료와 EOF는 수신 루프를 종료합니다. 코루틴 프레임은 완료 처리와 재개 호출을 포함한 pending I/O가 모두 정리된 뒤 파괴합니다.
 
 송신 루프도 세션마다 코루틴 하나를 유지합니다. 큐가 비면 중단하고, 새 데이터가 들어오면 `SEND_WAKE` 알림을 IOCP에 게시해 재개합니다. `Send()`는 큐 등록 결과를 반환하며 실제 `WSASend`와 완료 처리는 IOCP 워커에서 수행합니다. 부분 송신은 남은 바이트부터 이어 보내고, 실패·취소 완료는 연결을 종료합니다. 연결 종료 후 pending I/O가 모두 정리되면 종료된 프레임과 빈 큐에서 대기 중인 프레임을 모두 회수합니다.
+
+서버 간 통신은 양쪽 프로세스의 전용 IOCP 워커에서 `ConnectEx`·`AcceptEx`·`WSASend`·`WSARecv`를 기다리는 코루틴으로 처리합니다. 요청 하나의 응답을 받은 뒤 다음 요청을 보내는 순서를 유지하며, 부분 송수신은 같은 프레임의 남은 바이트부터 이어갑니다. timeout이나 종료 시에는 I/O 취소를 요청하고 완료 통지를 회수한 뒤 버퍼와 코루틴 프레임을 해제합니다. DBServer의 COM 초기화, OLE DB 연결·호출·해제는 별도 DB 작업 스레드에서 수행하고 결과를 IOCP에 알립니다.
 
 ## 프로젝트 구조
 
@@ -92,7 +95,7 @@ GameServer/
    └─ pch.h
 ```
 
-패킷 정의는 `Common/Protocol/`, TCP 프레임 송수신은 `Common/Network/DBTransport.h`에 있습니다. DB 설정 예제와 SQL 스크립트는 `DBServer/Resource/`에 있습니다.
+패킷 정의는 `Common/Protocol/`, 서버 간 패킷 크기와 통신 상수는 `Common/Network/DBTransport.h`, IOCP 코루틴과 TCP 프레임 송수신은 `Common/Network/DBIocp.h`에 있습니다. DB 설정 예제와 SQL 스크립트는 `DBServer/Resource/`에 있습니다.
 
 ## 패킷 계약
 
@@ -178,6 +181,8 @@ GameServer는 클라이언트용 TCP `8694` 포트를 사용하고 채팅 로그
 
 GameServer 시작 시 DBServer에 연결할 수 없으면 초기화에 실패합니다. 실행 중 연결 장애·5초 응답 제한 초과·잘못된 패킷은 해당 요청을 DB 오류로 완료합니다. 이후 요청에서 1초 간격 제한으로 재접속을 시도하며, 실행 여부가 불확실한 요청을 자동 재전송하지 않습니다. 닉네임 변경이 DB에 반영된 뒤 응답만 유실됐다면 재로그인으로 저장된 상태를 다시 읽을 수 있습니다.
 
+서버 간 연결 시도는 1초, 프레임 송신과 응답 수신은 각각 5초의 제한을 적용합니다. 분할 데이터가 도착해도 기한을 연장하지 않습니다. DBServer의 요청 수신 대기는 첫 바이트가 올 때까지 유지하며, 첫 바이트 이후에는 프레임 전체를 5초 안에 받아야 합니다. DBServer 종료 시 진행 중인 DB 작업의 결과까지 회수한 뒤 스레드를 종료합니다.
+
 실행 중 사용할 수 있는 명령은 다음과 같습니다.
 
 | 명령 | 설명 |
@@ -201,6 +206,6 @@ GameServer 시작 시 DBServer에 연결할 수 없으면 초기화에 실패합
 
 - 클라이언트 전송 구간에 암호화가 없어 로컬 학습·포트폴리오 용도를 전제로 합니다.
 - 패킷은 Windows/MSVC 구조체 레이아웃과 little-endian 환경을 전제로 합니다.
-- DB 연결과 통신 워커가 각각 하나이므로 SQL 작업은 큐 순서대로 실행됩니다. 서버 간 통신은 로컬 신뢰 프로세스를 전제로 하며 별도 인증·암호화는 없습니다.
+- 서버 간 통신은 프로세스마다 IOCP 워커 하나를 사용하며, DBServer의 DB 연결과 DB 작업 스레드도 하나이므로 요청을 순차 처리합니다. 서버 간 통신은 로컬 신뢰 프로세스를 전제로 하며 별도 인증·암호화는 없습니다.
 - 채팅 로그는 프로세스 로컬 파일이며 다중 서버 환경의 중앙 로그 수집은 구현하지 않았습니다.
 - 실제 서비스에서는 비밀번호를 평문이나 복호화 가능한 형태로 저장하지 않고 안전한 비밀번호 해시 정책을 적용해야 합니다.
