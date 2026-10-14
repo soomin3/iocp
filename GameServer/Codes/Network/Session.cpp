@@ -43,6 +43,8 @@ CSession::CSession(const CPacketDispatcher& _PacketDispatcher, uint32_t _Session
 CSession::~CSession()
 {
 	assert(m_PendingIOCount.load() == 0);
+	assert(m_ReceiveTask.IsDone());
+	m_ReceiveTask.Reset();
 	DeleteCriticalSection(&m_StateLock);
 	DeleteCriticalSection(&m_SendLock);
 	DeleteCriticalSection(&m_PendingIOLock);
@@ -91,6 +93,9 @@ void CSession::Disconnect()
 
 void CSession::Release()
 {
+	assert(m_PendingIOCount.load() == 0);
+	assert(m_ReceiveTask.IsDone());
+	m_ReceiveTask.Reset();
 	if (m_Socket != INVALID_SOCKET)
 	{
 		closesocket(m_Socket);
@@ -111,6 +116,11 @@ bool CSession::TryReset()
 	{
 		return false;
 	}
+
+	// Pending completions also pin every in-progress resume call, including the
+	// initial resume from ACCEPT. The final-suspended frame is now safe to destroy.
+	assert(m_ReceiveTask.IsDone());
+	m_ReceiveTask.Reset();
 
 	CCSLock SendLock(&m_SendLock);
 
@@ -163,9 +173,9 @@ bool CSession::PostAccept(SOCKET _ListenSocket)
 	{
 		if (WSAGetLastError() != WSA_IO_PENDING)
 		{
+			m_PendingIOCount.fetch_sub(1);
 			Release();
 			m_State = ESessionState::DISCONNECTED;
-			m_PendingIOCount.fetch_sub(1);
 			//Release();
 			return false;
 		}
@@ -174,10 +184,67 @@ bool CSession::PostAccept(SOCKET _ListenSocket)
 	return true;
 }
 
-bool CSession::PostRead()
+bool CSession::StartReceiveLoop()
+{
+	{
+		CCSLock Lock(&m_StateLock);
+		if (m_State != ESessionState::CONNECTED)
+		{
+			return false;
+		}
+		m_ReceiveTask = ReceiveLoop(m_Generation);
+	}
+
+	// The ACCEPT completion remains pending until this initial resume returns.
+	m_ReceiveTask.Resume();
+	return GetState() == ESessionState::CONNECTED;
+}
+
+bool CSession::CompleteRead(DWORD _TransferredBytes, DWORD _Error)
+{
+	{
+		CCSLock Lock(&m_StateLock);
+		m_ReadResult = { _TransferredBytes, _Error };
+	}
+
+	// Failed/canceled completions must resume too, so the loop can terminate.
+	// The caller releases this READ's pending count only after Resume returns.
+	m_ReceiveTask.Resume();
+	return GetState() == ESessionState::CONNECTED;
+}
+
+bool CSession::SReceiveAwaiter::await_suspend(std::coroutine_handle<>) const
+{
+	// Another IOCP worker may resume us before this function returns. Do not
+	// access the awaiter/frame after PostRead publishes the operation.
+	return Session.PostRead(Generation);
+}
+
+CSession::SReceiveResult CSession::SReceiveAwaiter::await_resume() const noexcept
+{
+	return Session.m_ReadResult;
+}
+
+CReceiveTask CSession::ReceiveLoop(uint64_t _Generation)
+{
+	while (true)
+	{
+		const SReceiveResult Result = co_await SReceiveAwaiter{ *this, _Generation };
+		if (Result.Error != ERROR_SUCCESS || Result.Bytes == 0 || !OnRecv(Result.Bytes))
+		{
+			break;
+		}
+	}
+
+	// IOCPManager performs user detachment and recycling after Resume returns.
+	Disconnect();
+}
+
+bool CSession::PostRead(uint64_t _Generation)
 {
 	CCSLock Lock(&m_StateLock);
-	if (m_State != ESessionState::CONNECTED || m_ReceivedBytes >= sizeof(m_ReadBuffer))
+	m_ReadResult = {};
+	if (m_State != ESessionState::CONNECTED || m_Generation != _Generation || m_ReceivedBytes >= sizeof(m_ReadBuffer))
 	{
 		return false;
 	}
@@ -188,21 +255,24 @@ bool CSession::PostRead()
 	wsaBuf.buf = m_ReadBuffer + m_ReceivedBytes;
 	wsaBuf.len = static_cast<ULONG>(sizeof(m_ReadBuffer) - m_ReceivedBytes);
 
-	DWORD bytesReceived = 0;
 	DWORD flags = 0;
 
 	m_PendingIOCount.fetch_add(1);
-	int32_t result = WSARecv(m_Socket, &wsaBuf, 1, &bytesReceived, &flags, (LPWSAOVERLAPPED)&m_ReadOverlapped, nullptr);
+	int32_t result = WSARecv(m_Socket, &wsaBuf, 1, nullptr, &flags, &m_ReadOverlapped.Overlapped, nullptr);
 
 	if (result == SOCKET_ERROR)
 	{
-		if (WSAGetLastError() != WSA_IO_PENDING) 
+		const DWORD Error = WSAGetLastError();
+		if (Error != WSA_IO_PENDING)
 		{
+			m_ReadResult.Error = Error;
 			m_PendingIOCount.fetch_sub(1);
 			return false;
 		}
 	}
 
+	// Immediate success still produces an IOCP completion. Only that completion
+	// resumes the coroutine; returning false here would resume it twice.
 	return true;
 }
 

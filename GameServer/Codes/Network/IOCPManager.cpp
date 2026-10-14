@@ -24,6 +24,7 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 		LPOVERLAPPED OverLapped = nullptr;
 
 		bool success = GetQueuedCompletionStatus(_iocpHandle, &Transferred, &CompletionKey, &OverLapped, INFINITE);
+		const DWORD Error = success ? ERROR_SUCCESS : GetLastError();
 
 		if (OverLapped == nullptr)
 		{
@@ -69,7 +70,9 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 		SMyOverlapped* OverLappedData = reinterpret_cast<SMyOverlapped*>(OverLapped);
 		CSession* Session = OverLappedData->owner;
 
-		bool keepConnected = success && ProcessCompletion(Session, Transferred, OverLappedData->ioType);
+		bool keepConnected = OverLappedData->ioType == EIO_TYPE::READ
+			? Session->CompleteRead(success ? Transferred : 0, Error)
+			: success && ProcessCompletion(Session, Transferred, OverLappedData->ioType);
 
 		if (!keepConnected)
 		{
@@ -124,18 +127,7 @@ bool CIOCPManager::ProcessCompletion(CSession* _Session, DWORD _TransferredBytes
 			return false;
 		}
 
-		return _Session->CompleteAccept() && _Session->PostRead();
-	}
-	case EIO_TYPE::READ:
-	{
-		//cout << "Read Complete\n";
-
-		if (_TransferredBytes == 0) //클라이언트 종료
-		{
-			return false;
-		}
-
-		return _Session->OnRecv(_TransferredBytes) && _Session->PostRead();
+		return _Session->CompleteAccept() && _Session->StartReceiveLoop();
 	}
 	case EIO_TYPE::WRITE:
 	{

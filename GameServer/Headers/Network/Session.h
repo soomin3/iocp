@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "Myinclude.h"
+#include "ReceiveTask.h"
 
 using namespace std;
 class CSession;
@@ -58,7 +59,8 @@ public:
 	void Release();
 	bool TryReset();
 	bool PostAccept(SOCKET _ListenSocket);
-	bool PostRead();
+	bool StartReceiveLoop();
+	bool CompleteRead(DWORD _TransferredBytes, DWORD _Error);
 	bool CompleteAccept();
 
 	bool Send(const void* _Data, size_t _Size, uint64_t _Generation);
@@ -85,6 +87,23 @@ public:
 	}
 
 private:
+	struct SReceiveResult
+	{
+		DWORD Bytes = 0;
+		DWORD Error = ERROR_OPERATION_ABORTED;
+	};
+
+	struct SReceiveAwaiter
+	{
+		CSession& Session;
+		uint64_t Generation;
+		bool await_ready() const noexcept { return false; }
+		bool await_suspend(std::coroutine_handle<>) const;
+		SReceiveResult await_resume() const noexcept;
+	};
+
+	CReceiveTask ReceiveLoop(uint64_t _Generation);
+	bool PostRead(uint64_t _Generation);
 	bool ProcessPackets();
 
 	static constexpr size_t READ_BUFFER_SIZE = 64 * 1024;
@@ -100,6 +119,8 @@ private:
 	char m_ReadBuffer[READ_BUFFER_SIZE];
 
 	DWORD m_ReceivedBytes;
+	SReceiveResult m_ReadResult;
+	CReceiveTask m_ReceiveTask;
 
 	atomic_int32_t m_PendingIOCount;
 

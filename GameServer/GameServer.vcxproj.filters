@@ -129,6 +129,7 @@
   <ItemGroup>
     <ClCompile Include="Codes\Network\DBClient.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClInclude Include="Headers\Network\DBClient.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Headers\Network\ReceiveTask.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\Common\Network\DBTransport.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
 </Project>

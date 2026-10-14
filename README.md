@@ -8,6 +8,7 @@ Windows IOCP 게임 서버와 SQL Server 전용 DB 서버를 TCP로 연결한 C+
 
 - `AcceptEx`와 고정 세션 풀을 이용한 비동기 연결 수락
 - IOCP 워커 기반 비동기 수신·송신 및 partial send 처리
+- C++20 코루틴으로 표현한 세션별 수신 루프
 - TCP 분할·병합을 고려한 패킷 누적 및 반복 디스패치
 - 세션 generation을 이용한 이전 연결의 늦은 완료 무효화
 - 객체형 패킷 처리기와 로그인 상태 검증
@@ -25,6 +26,7 @@ Windows IOCP 게임 서버와 SQL Server 전용 DB 서버를 TCP로 연결한 C+
 ```text
 TCP bytes
   → IOCP READ
+  → Session 수신 코루틴 재개
   → Session 수신 버퍼
   → PacketDispatcher
       ├─ 로그인/닉네임
@@ -48,6 +50,8 @@ TCP bytes
 ```
 
 로그인 요청은 `sessionID + generation`으로 현재 연결을 식별합니다. 로그인 이후 DB 요청은 `accountID + requestID`를 사용합니다. 로그아웃이나 세션 재사용 이후 도착한 오래된 응답은 현재 상태와 일치하지 않으므로 적용되지 않습니다.
+
+`GameServer`의 수신 루프는 `co_await`로 `WSARecv` 완료를 기다리고, 기존 IOCP 워커에서 재개되어 패킷을 처리한 뒤 다음 수신을 제출합니다. 즉시 성공한 수신도 IOCP 완료에서 한 번만 재개하며, 실패·취소 완료와 EOF는 수신 루프를 종료합니다. 코루틴 프레임은 완료 처리와 재개 호출을 포함한 pending I/O가 모두 정리된 뒤 파괴합니다.
 
 ## 프로젝트 구조
 
