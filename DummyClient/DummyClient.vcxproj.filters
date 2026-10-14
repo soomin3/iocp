@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Codes"><UniqueIdentifier>{e1d53aa4-d837-4363-812e-210428760b58}</UniqueIdentifier></Filter>
+    <Filter Include="Headers"><UniqueIdentifier>{89747dcf-1b2c-42b1-a97c-07f3ee1f1c18}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Codes\Config.cpp"><Filter>Codes</Filter></ClCompile>
+    <ClCompile Include="Codes\LoadClient.cpp"><Filter>Codes</Filter></ClCompile>
+    <ClCompile Include="Codes\main.cpp"><Filter>Codes</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Headers\Config.h"><Filter>Headers</Filter></ClInclude>
+    <ClInclude Include="Headers\LoadClient.h"><Filter>Headers</Filter></ClInclude>
+    <ClInclude Include="Headers\Metrics.h"><Filter>Headers</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
+    <None Include="accounts.example.tsv" />
+  </ItemGroup>
+</Project>

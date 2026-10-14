@@ -3,5 +3,8 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="IOCPServer/IOCPServer.vcxproj" Id="c1eb4d3f-9dc0-4c42-aa0f-9f55e446e50f" />
+  <Project Path="DBServer/DBServer.vcxproj" Id="cc949430-303d-494e-a6ba-2b383a80bc4a" />
+  <Project Path="DummyClient/DummyClient.vcxproj" Id="d75df673-7a98-448d-ae9a-0e5d247bbf6d" />
+  <Project Path="GameServer/GameServer.vcxproj" Id="c1eb4d3f-9dc0-4c42-aa0f-9f55e446e50f" />
+  <Project Path="LoginServer/LoginServer.vcxproj" Id="f013c243-ae7a-416d-9d85-f34e6943654e" />
 </Solution>

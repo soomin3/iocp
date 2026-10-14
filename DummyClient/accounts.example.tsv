@@ -1,0 +1,3 @@
+# UTF-8, tab-separated; replace with existing test accounts. No header row.
+dummy_1	test-password	dc_1
+dummy_2	test-password	dc_2

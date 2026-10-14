@@ -41,3 +41,6 @@ Desktop.ini
 DBConfig.txt
 **/DBConfig.txt
 *.pfx
+
+!DBServer/Resource/DBConfig.example.txt
+!DBServer/Resource/Database.sql

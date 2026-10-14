@@ -1,0 +1,6 @@
+; DATABASE = IP, PORT, ID, PASSWORD
+TestDB = 127.0.0.1, 1433, game_user, game_password
+LogDB = 127.0.0.1, 1433, log_user, log_password
+
+; Leave both ID and PASSWORD empty to use Windows authentication.
+LocalDB = 127.0.0.1, 1433, ,
