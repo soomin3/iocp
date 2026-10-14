@@ -221,7 +221,7 @@
     <ClInclude Include="Headers\pch.h" />
     <ClInclude Include="Headers\Network\Server.h" />
     <ClInclude Include="Headers\Network\Session.h" />
-    <ClInclude Include="Headers\Network\ReceiveTask.h" />
+    <ClInclude Include="Headers\Network\IOTask.h" />
     <ClInclude Include="Headers\Function\Singleton.h" />
     <ClInclude Include="Headers\Function\TextEncoding.h" />
     <ClInclude Include="Headers\Function\TextValidation.h" />

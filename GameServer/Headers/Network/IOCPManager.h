@@ -38,7 +38,7 @@ private:
 	void WorkerThread(HANDLE _iocpHandle);
 	bool InitAcceptEx(SOCKET _ListenSocket);
 
-	bool ProcessCompletion(CSession* _Session, DWORD _TransferredBytes, EIO_TYPE _IOType);
+	bool ProcessCompletion(CSession* _Session, EIO_TYPE _IOType);
 	void TryRecycleSession(CSession* _Session);
 	void DisconnectSession(CSession* _Session);
 	void StopWorkerThreads();

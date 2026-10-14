@@ -14,7 +14,8 @@ CSession::CSession(const CPacketDispatcher& _PacketDispatcher, uint32_t _Session
 	m_Generation(0),
 	m_SendOffset(0),
 	m_QueuedSendBytes(0),
-	m_IsSending(false),
+	m_SendWaiting(false),
+	m_IOCPHandle(nullptr),
 	m_PacketDispatcher(_PacketDispatcher),
 	m_LoginRequestPending(false)
 {
@@ -27,6 +28,7 @@ CSession::CSession(const CPacketDispatcher& _PacketDispatcher, uint32_t _Session
 	memset(&m_AcceptOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 	memset(&m_ReadOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 	memset(&m_WriteOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
+	memset(&m_SendWakeOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 
 	m_AcceptOverlapped.ioType = EIO_TYPE::ACCEPT;
 	m_AcceptOverlapped.owner = this;
@@ -36,6 +38,8 @@ CSession::CSession(const CPacketDispatcher& _PacketDispatcher, uint32_t _Session
 
 	m_WriteOverlapped.ioType = EIO_TYPE::WRITE;
 	m_WriteOverlapped.owner = this;
+	m_SendWakeOverlapped.ioType = EIO_TYPE::SEND_WAKE;
+	m_SendWakeOverlapped.owner = this;
 
 	memset(m_ReadBuffer, 0, sizeof(m_ReadBuffer));
 }
@@ -45,6 +49,8 @@ CSession::~CSession()
 	assert(m_PendingIOCount.load() == 0);
 	assert(m_ReceiveTask.IsDone());
 	m_ReceiveTask.Reset();
+	assert(m_SendTask.IsDone() || m_SendWaiting);
+	m_SendTask.Reset();
 	DeleteCriticalSection(&m_StateLock);
 	DeleteCriticalSection(&m_SendLock);
 	DeleteCriticalSection(&m_PendingIOLock);
@@ -96,6 +102,8 @@ void CSession::Release()
 	assert(m_PendingIOCount.load() == 0);
 	assert(m_ReceiveTask.IsDone());
 	m_ReceiveTask.Reset();
+	assert(m_SendTask.IsDone() || m_SendWaiting);
+	m_SendTask.Reset();
 	if (m_Socket != INVALID_SOCKET)
 	{
 		closesocket(m_Socket);
@@ -104,6 +112,7 @@ void CSession::Release()
 	memset(&m_AcceptOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 	memset(&m_ReadOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 	memset(&m_WriteOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
+	memset(&m_SendWakeOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 
 	m_ReceivedBytes = 0;
 }
@@ -123,17 +132,22 @@ bool CSession::TryReset()
 	m_ReceiveTask.Reset();
 
 	CCSLock SendLock(&m_SendLock);
+	// With no pending completion/resume, an idle queue waiter is also safe to destroy.
+	assert(m_SendTask.IsDone() || m_SendWaiting);
+	m_SendTask.Reset();
 
 	memset(&m_AcceptOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 	memset(&m_ReadOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 	memset(&m_WriteOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
+	memset(&m_SendWakeOverlapped.Overlapped, 0, sizeof(WSAOVERLAPPED));
 
 	m_ReceivedBytes = 0;
 
 	m_SendQueue.clear();
 	m_SendOffset = 0;
 	m_QueuedSendBytes = 0;
-	m_IsSending = false;
+	m_SendWaiting = false;
+	m_IOCPHandle = nullptr;
 
 	m_State = ESessionState::DISCONNECTED;
 
@@ -220,16 +234,16 @@ bool CSession::SReceiveAwaiter::await_suspend(std::coroutine_handle<>) const
 	return Session.PostRead(Generation);
 }
 
-CSession::SReceiveResult CSession::SReceiveAwaiter::await_resume() const noexcept
+CSession::SIOResult CSession::SReceiveAwaiter::await_resume() const noexcept
 {
 	return Session.m_ReadResult;
 }
 
-CReceiveTask CSession::ReceiveLoop(uint64_t _Generation)
+CIOTask CSession::ReceiveLoop(uint64_t _Generation)
 {
 	while (true)
 	{
-		const SReceiveResult Result = co_await SReceiveAwaiter{ *this, _Generation };
+		const SIOResult Result = co_await SReceiveAwaiter{ *this, _Generation };
 		if (Result.Error != ERROR_SUCCESS || Result.Bytes == 0 || !OnRecv(Result.Bytes))
 		{
 			break;
@@ -299,8 +313,6 @@ bool CSession::Send(const void* _Data, size_t _Size, uint64_t _Generation)
 		return false;
 	}
 
-	bool StartWrite = false;
-
 	{
 		CCSLock StateLock(&m_StateLock);
 		if (m_State != ESessionState::CONNECTED || m_Generation != _Generation)
@@ -317,21 +329,117 @@ bool CSession::Send(const void* _Data, size_t _Size, uint64_t _Generation)
 		const char* Begin = static_cast<const char*>(_Data);
 		m_SendQueue.emplace_back(Begin, Begin + _Size);
 		m_QueuedSendBytes += _Size;
-		if (!m_IsSending)
+		if (m_SendWaiting)
 		{
-			m_IsSending = true;
-			StartWrite = true;
+			// Producers only enqueue work. IOCP owns every resume, including idle wakes.
+			m_SendWaiting = false;
+			m_PendingIOCount.fetch_add(1);
+			if (!PostQueuedCompletionStatus(m_IOCPHandle, 0, 0, &m_SendWakeOverlapped.Overlapped))
+			{
+				m_PendingIOCount.fetch_sub(1);
+				m_SendWaiting = true;
+				return false;
+			}
 		}
 	}
 
-	return !StartWrite || PostWrite();
+	return true;
 }
 
-bool CSession::PostWrite()
+bool CSession::StartSendLoop(HANDLE _IOCPHandle)
+{
+	{
+		CCSLock Lock(&m_StateLock);
+		if (m_State != ESessionState::CONNECTED)
+		{
+			return false;
+		}
+		m_IOCPHandle = _IOCPHandle;
+		m_SendTask = SendLoop(m_Generation);
+	}
+
+	// The ACCEPT completion pins the initial resume, as it does for ReceiveLoop.
+	return ResumeSendLoop();
+}
+
+bool CSession::ResumeSendLoop()
+{
+	m_SendTask.Resume();
+	return GetState() == ESessionState::CONNECTED;
+}
+
+bool CSession::CompleteWrite(DWORD _TransferredBytes, DWORD _Error)
+{
+	{
+		CCSLock Lock(&m_StateLock);
+		m_WriteResult = { _TransferredBytes, _Error };
+	}
+
+	// Failed/canceled WRITE completions must also terminate the suspended loop.
+	return ResumeSendLoop();
+}
+
+bool CSession::SSendQueueAwaiter::await_suspend(std::coroutine_handle<>) const
+{
+	return Session.WaitForSend(Generation);
+}
+
+bool CSession::SSendQueueAwaiter::await_resume() const
+{
+	CCSLock Lock(&Session.m_StateLock);
+	return Session.m_State == ESessionState::CONNECTED && Session.m_Generation == Generation;
+}
+
+bool CSession::SSendAwaiter::await_suspend(std::coroutine_handle<>) const
+{
+	return Session.PostWrite(Generation);
+}
+
+CSession::SIOResult CSession::SSendAwaiter::await_resume() const noexcept
+{
+	return Session.m_WriteResult;
+}
+
+CIOTask CSession::SendLoop(uint64_t _Generation)
+{
+	while (co_await SSendQueueAwaiter{ *this, _Generation })
+	{
+		const SIOResult Result = co_await SSendAwaiter{ *this, _Generation };
+		if (Result.Error != ERROR_SUCCESS || !OnSend(Result.Bytes))
+		{
+			break;
+		}
+	}
+
+	Disconnect();
+}
+
+bool CSession::WaitForSend(uint64_t _Generation)
+{
+	CCSLock StateLock(&m_StateLock);
+	if (m_State != ESessionState::CONNECTED || m_Generation != _Generation)
+	{
+		return false;
+	}
+
+	CCSLock SendLock(&m_SendLock);
+	if (!m_SendQueue.empty())
+	{
+		return false;
+	}
+
+	// Publish only after suspension. Enqueue and idle publication use the same lock.
+	// A producer can post the next wake before this call returns.
+	m_SendWaiting = true;
+	return true;
+}
+
+bool CSession::PostWrite(uint64_t _Generation)
 {
 	CCSLock StateLock(&m_StateLock);
 
-	if (m_State != ESessionState::CONNECTED)
+	m_WriteResult = {};
+	if (m_State != ESessionState::CONNECTED || m_Generation != _Generation)
 	{
 		return false;
 	}
@@ -350,11 +458,9 @@ bool CSession::PostWrite()
 	Buffer.buf = Packet.data() + m_SendOffset;
 	Buffer.len = static_cast<ULONG>(Packet.size() - m_SendOffset);
 
-	DWORD SentBytes = 0;
-
 	m_PendingIOCount.fetch_add(1);
 
-	const int32_t Result = WSASend(m_Socket, &Buffer, 1, &SentBytes, 0, &m_WriteOverlapped.Overlapped, nullptr);
+	const int32_t Result = WSASend(m_Socket, &Buffer, 1, nullptr, 0, &m_WriteOverlapped.Overlapped, nullptr);
 
 	if (Result == SOCKET_ERROR)
 	{
@@ -362,55 +468,40 @@ bool CSession::PostWrite()
 
 		if (Error != WSA_IO_PENDING)
 		{
+			m_WriteResult.Error = Error;
 			m_PendingIOCount.fetch_sub(1);
 			return false;
 		}
 	}
 
+	// Immediate success still resumes only through the IOCP completion.
 	return true;
 }
 
 bool CSession::OnSend(DWORD _TransferredBytes)
 {
-	bool NextPostSend = false;
-
-	// 임계 영역 구분
+	CCSLock Lock(&m_SendLock);
+	if (m_SendQueue.empty())
 	{
-		CCSLock Lock(&m_SendLock);
-
-		if (m_SendQueue.empty())
-		{
-			return false;
-		}
-
-		vector<char>& Packet = m_SendQueue.front();
-		const size_t Remaining = Packet.size() - m_SendOffset;
-
-		if (_TransferredBytes == 0 || _TransferredBytes > Remaining)
-		{
-			return false;
-		}
-
-		m_SendOffset += _TransferredBytes;
-
-		if (m_SendOffset == Packet.size())
-		{
-			m_QueuedSendBytes -= Packet.size();
-			m_SendQueue.pop_front();
-			m_SendOffset = 0;
-		}
-
-		if (m_SendQueue.empty())
-		{
-			m_IsSending = false;
-		}
-		else
-		{
-			NextPostSend = true;
-		}
+		return false;
 	}
 
-	return !NextPostSend || PostWrite();
+	vector<char>& Packet = m_SendQueue.front();
+	const size_t Remaining = Packet.size() - m_SendOffset;
+	if (_TransferredBytes == 0 || _TransferredBytes > Remaining)
+	{
+		return false;
+	}
+
+	m_SendOffset += _TransferredBytes;
+	if (m_SendOffset == Packet.size())
+	{
+		m_QueuedSendBytes -= Packet.size();
+		m_SendQueue.pop_front();
+		m_SendOffset = 0;
+	}
+
+	return true;
 }
 
 bool CSession::OnRecv(DWORD _TransferredBytes)

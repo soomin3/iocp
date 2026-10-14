@@ -5,14 +5,14 @@
 #include <utility>
 
 // Session owns the frame until every I/O completion and resume call has returned.
-class CReceiveTask
+class CIOTask
 {
 public:
 	struct promise_type
 	{
-		CReceiveTask get_return_object() noexcept
+		CIOTask get_return_object() noexcept
 		{
-			return CReceiveTask(std::coroutine_handle<promise_type>::from_promise(*this));
+			return CIOTask(std::coroutine_handle<promise_type>::from_promise(*this));
 		}
 		std::suspend_always initial_suspend() const noexcept { return {}; }
 		std::suspend_always final_suspend() const noexcept { return {}; }
@@ -20,12 +20,12 @@ public:
 		void unhandled_exception() const noexcept { std::terminate(); }
 	};
 
-	CReceiveTask() = default;
-	CReceiveTask(const CReceiveTask&) = delete;
-	CReceiveTask& operator=(const CReceiveTask&) = delete;
-	CReceiveTask(CReceiveTask&& _Other) noexcept
+	CIOTask() = default;
+	CIOTask(const CIOTask&) = delete;
+	CIOTask& operator=(const CIOTask&) = delete;
+	CIOTask(CIOTask&& _Other) noexcept
 		: m_Handle(std::exchange(_Other.m_Handle, {})) {}
-	CReceiveTask& operator=(CReceiveTask&& _Other) noexcept
+	CIOTask& operator=(CIOTask&& _Other) noexcept
 	{
 		if (this != &_Other)
 		{
@@ -34,7 +34,7 @@ public:
 		}
 		return *this;
 	}
-	~CReceiveTask() { Reset(); }
+	~CIOTask() { Reset(); }
 
 	// Only inspect completion after the session's pending I/O count reaches zero.
 	bool IsDone() const noexcept { return !m_Handle || m_Handle.done(); }
@@ -42,7 +42,7 @@ public:
 	{
 		assert(m_Handle);
 		// A subsequent completion may resume again before this call returns.
-		// Do not inspect the promise/frame after publishing a receive operation.
+		// Do not inspect the promise/frame after publishing asynchronous work.
 		m_Handle.resume();
 	}
 	void Reset() noexcept
@@ -55,6 +55,6 @@ public:
 	}
 
 private:
-	explicit CReceiveTask(std::coroutine_handle<promise_type> _Handle) noexcept : m_Handle(_Handle) {}
+	explicit CIOTask(std::coroutine_handle<promise_type> _Handle) noexcept : m_Handle(_Handle) {}
 	std::coroutine_handle<promise_type> m_Handle{};
 };

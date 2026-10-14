@@ -70,9 +70,22 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 		SMyOverlapped* OverLappedData = reinterpret_cast<SMyOverlapped*>(OverLapped);
 		CSession* Session = OverLappedData->owner;
 
-		bool keepConnected = OverLappedData->ioType == EIO_TYPE::READ
-			? Session->CompleteRead(success ? Transferred : 0, Error)
-			: success && ProcessCompletion(Session, Transferred, OverLappedData->ioType);
+		bool keepConnected = false;
+		switch (OverLappedData->ioType)
+		{
+		case EIO_TYPE::READ:
+			keepConnected = Session->CompleteRead(success ? Transferred : 0, Error);
+			break;
+		case EIO_TYPE::WRITE:
+			keepConnected = Session->CompleteWrite(success ? Transferred : 0, Error);
+			break;
+		case EIO_TYPE::SEND_WAKE:
+			keepConnected = Session->ResumeSendLoop();
+			break;
+		default:
+			keepConnected = success && ProcessCompletion(Session, OverLappedData->ioType);
+			break;
+		}
 
 		if (!keepConnected)
 		{
@@ -109,7 +122,7 @@ bool CIOCPManager::InitAcceptEx(SOCKET _ListenSocket)
 	return true;
 }
 
-bool CIOCPManager::ProcessCompletion(CSession* _Session, DWORD _TransferredBytes, EIO_TYPE _IOType)
+bool CIOCPManager::ProcessCompletion(CSession* _Session, EIO_TYPE _IOType)
 {
 	switch (_IOType)
 	{
@@ -127,11 +140,7 @@ bool CIOCPManager::ProcessCompletion(CSession* _Session, DWORD _TransferredBytes
 			return false;
 		}
 
-		return _Session->CompleteAccept() && _Session->StartReceiveLoop();
-	}
-	case EIO_TYPE::WRITE:
-	{
-		return _Session->OnSend(_TransferredBytes);
+		return _Session->CompleteAccept() && _Session->StartSendLoop(m_IOCPHandle) && _Session->StartReceiveLoop();
 	}
 	default:
 	{

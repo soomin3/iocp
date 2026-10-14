@@ -11,7 +11,7 @@
 #include <memory>
 
 #include "Myinclude.h"
-#include "ReceiveTask.h"
+#include "IOTask.h"
 
 using namespace std;
 class CSession;
@@ -22,7 +22,8 @@ enum class EIO_TYPE : uint8_t
 {
 	ACCEPT,
 	READ,
-	WRITE
+	WRITE,
+	SEND_WAKE
 };
 
 enum class ESessionState : uint8_t
@@ -64,8 +65,9 @@ public:
 	bool CompleteAccept();
 
 	bool Send(const void* _Data, size_t _Size, uint64_t _Generation);
-	bool PostWrite();
-	bool OnSend(DWORD _TransferredBytes);
+	bool StartSendLoop(HANDLE _IOCPHandle);
+	bool ResumeSendLoop();
+	bool CompleteWrite(DWORD _TransferredBytes, DWORD _Error);
 
 	bool OnRecv(DWORD _TransferredBytes);
 
@@ -87,7 +89,7 @@ public:
 	}
 
 private:
-	struct SReceiveResult
+	struct SIOResult
 	{
 		DWORD Bytes = 0;
 		DWORD Error = ERROR_OPERATION_ABORTED;
@@ -99,11 +101,33 @@ private:
 		uint64_t Generation;
 		bool await_ready() const noexcept { return false; }
 		bool await_suspend(std::coroutine_handle<>) const;
-		SReceiveResult await_resume() const noexcept;
+		SIOResult await_resume() const noexcept;
 	};
 
-	CReceiveTask ReceiveLoop(uint64_t _Generation);
+	struct SSendQueueAwaiter
+	{
+		CSession& Session;
+		uint64_t Generation;
+		bool await_ready() const noexcept { return false; }
+		bool await_suspend(std::coroutine_handle<>) const;
+		bool await_resume() const;
+	};
+
+	struct SSendAwaiter
+	{
+		CSession& Session;
+		uint64_t Generation;
+		bool await_ready() const noexcept { return false; }
+		bool await_suspend(std::coroutine_handle<>) const;
+		SIOResult await_resume() const noexcept;
+	};
+
+	CIOTask ReceiveLoop(uint64_t _Generation);
 	bool PostRead(uint64_t _Generation);
+	CIOTask SendLoop(uint64_t _Generation);
+	bool WaitForSend(uint64_t _Generation);
+	bool PostWrite(uint64_t _Generation);
+	bool OnSend(DWORD _TransferredBytes);
 	bool ProcessPackets();
 
 	static constexpr size_t READ_BUFFER_SIZE = 64 * 1024;
@@ -114,13 +138,14 @@ private:
 	SMyOverlapped m_AcceptOverlapped;
 	SMyOverlapped m_WriteOverlapped;
 	SMyOverlapped m_ReadOverlapped;
+	SMyOverlapped m_SendWakeOverlapped;
 
 	char m_AcceptBuffer[64];
 	char m_ReadBuffer[READ_BUFFER_SIZE];
 
 	DWORD m_ReceivedBytes;
-	SReceiveResult m_ReadResult;
-	CReceiveTask m_ReceiveTask;
+	SIOResult m_ReadResult;
+	CIOTask m_ReceiveTask;
 
 	atomic_int32_t m_PendingIOCount;
 
@@ -132,7 +157,10 @@ private:
 	deque<vector<char>> m_SendQueue;
 	size_t m_SendOffset;
 	size_t m_QueuedSendBytes;
-	bool m_IsSending;
+	bool m_SendWaiting;
+	HANDLE m_IOCPHandle;
+	SIOResult m_WriteResult;
+	CIOTask m_SendTask;
 	CRITICAL_SECTION m_PendingIOLock;
 	CONDITION_VARIABLE m_PendingIOCCondition;
 
