@@ -7,7 +7,7 @@
 
 #include "Packet.h"
 
-class COleDbDatabase
+class COLEDBDatabase
 {
 public:
 	bool Open();

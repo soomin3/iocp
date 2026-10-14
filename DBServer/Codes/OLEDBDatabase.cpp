@@ -1,4 +1,4 @@
-#include "OleDbDatabase.h"
+#include "OLEDBDatabase.h"
 
 #include <array>
 #include <charconv>
@@ -229,7 +229,7 @@ namespace
 	}
 }
 
-bool COleDbDatabase::Open()
+bool COLEDBDatabase::Open()
 {
 	std::array<std::wstring, 4> Fields;
 	if (!ReadConfig(Fields))
@@ -262,7 +262,7 @@ bool COleDbDatabase::Open()
 	return true;
 }
 
-PacketBuffer COleDbDatabase::Handle(const PacketBuffer& _Request)
+PacketBuffer COLEDBDatabase::Handle(const PacketBuffer& _Request)
 {
 	if (_Request.size() < sizeof(PacketHeader))
 	{
@@ -289,7 +289,7 @@ PacketBuffer COleDbDatabase::Handle(const PacketBuffer& _Request)
 	return {};
 }
 
-PacketBuffer COleDbDatabase::Login(const SD_LOGIN_REQ& _Request)
+PacketBuffer COLEDBDatabase::Login(const SD_LOGIN_REQ& _Request)
 {
 	DS_LOGIN_RES Response;
 	Response.sessionID = _Request.sessionID;
@@ -331,7 +331,7 @@ PacketBuffer COleDbDatabase::Login(const SD_LOGIN_REQ& _Request)
 	return MakePacketBuffer(Response);
 }
 
-PacketBuffer COleDbDatabase::CreateNickname(const SD_CREATE_NICKNAME_REQ& _Request)
+PacketBuffer COLEDBDatabase::CreateNickname(const SD_CREATE_NICKNAME_REQ& _Request)
 {
 	DS_CREATE_NICKNAME_RES Response;
 	Response.requestID = _Request.requestID;

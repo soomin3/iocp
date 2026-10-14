@@ -1,4 +1,4 @@
-#include "OleDbDatabase.h"
+#include "OLEDBDatabase.h"
 #include "DBTransport.h"
 
 #include <atomic>
@@ -102,7 +102,7 @@ namespace
 				return;
 			}
 			{
-				COleDbDatabase Database;
+				COLEDBDatabase Database;
 				const bool Connected = Database.Open();
 				_Started.set_value(Connected);
 				if (Connected)
@@ -114,7 +114,7 @@ namespace
 			m_Running.store(false);
 		}
 
-		void Serve(SOCKET _ListenSocket, COleDbDatabase& _Database)
+		void Serve(SOCKET _ListenSocket, COLEDBDatabase& _Database)
 		{
 			while (m_Running.load())
 			{
@@ -146,7 +146,7 @@ namespace
 			}
 		}
 
-		void ProcessRequests(SOCKET _Client, COleDbDatabase& _Database)
+		void ProcessRequests(SOCKET _Client, COLEDBDatabase& _Database)
 		{
 			while (m_Running.load())
 			{

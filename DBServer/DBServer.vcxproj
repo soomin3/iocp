@@ -56,8 +56,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Codes\main.cpp" />
-    <ClCompile Include="Codes\OleDbDatabase.cpp" />
-    <ClInclude Include="Headers\OleDbDatabase.h" />
+    <ClCompile Include="Codes\OLEDBDatabase.cpp" />
+    <ClInclude Include="Headers\OLEDBDatabase.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Resource\DBConfig.example.txt" />
