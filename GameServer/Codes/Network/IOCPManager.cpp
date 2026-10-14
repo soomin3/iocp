@@ -73,6 +73,9 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 		bool keepConnected = false;
 		switch (OverLappedData->ioType)
 		{
+		case EIO_TYPE::ACCEPT:
+			keepConnected = Session->CompleteAccept(Error);
+			break;
 		case EIO_TYPE::READ:
 			keepConnected = Session->CompleteRead(success ? Transferred : 0, Error);
 			break;
@@ -83,7 +86,7 @@ void CIOCPManager::WorkerThread(HANDLE _iocpHandle)
 			keepConnected = Session->ResumeSendLoop();
 			break;
 		default:
-			keepConnected = success && ProcessCompletion(Session, OverLappedData->ioType);
+			printf("Unknown IO Type\n");
 			break;
 		}
 
@@ -122,41 +125,20 @@ bool CIOCPManager::InitAcceptEx(SOCKET _ListenSocket)
 	return true;
 }
 
-bool CIOCPManager::ProcessCompletion(CSession* _Session, EIO_TYPE _IOType)
+bool CIOCPManager::StartAcceptSession(CSession* _Session)
 {
-	switch (_IOType)
-	{
-	case EIO_TYPE::ACCEPT:
-	{
-		if (setsockopt(_Session->GetSocket(), SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&m_ServerSocket, sizeof(m_ServerSocket)) != 0)
-		{
-			cout << "setsockopt error: " << WSAGetLastError() << '\n';
-			return false;
-		}
-
-		if (CreateIoCompletionPort((HANDLE)_Session->GetSocket(), m_IOCPHandle, 0, 0) == NULL)
-		{
-			cout << "CreateIoCompletionPort error: " << GetLastError() << '\n';
-			return false;
-		}
-
-		return _Session->CompleteAccept() && _Session->StartSendLoop(m_IOCPHandle) && _Session->StartReceiveLoop();
-	}
-	default:
-	{
-		printf("Unknown IO Type\n");
-		return false;
-	}
-	}
+	// Serialize new submissions with shutdown's cancellation of the listener.
+	lock_guard<mutex> Lock(m_AcceptLock);
+	return m_IsRunning.load() && _Session->StartAccept(m_ServerSocket, m_IOCPHandle);
 }
 
 void CIOCPManager::TryRecycleSession(CSession* _Session)
 {
 	if (_Session->TryReset() && m_IsRunning.load())
 	{
-		if (!_Session->PostAccept(m_ServerSocket))
+		if (!StartAcceptSession(_Session) && m_IsRunning.load())
 		{
-			cout << "PostAccept Failed\n";
+			cout << "StartAccept Failed\n";
 		}
 	}
 }
@@ -355,9 +337,9 @@ bool CIOCPManager::Run()
 
 	for (int32_t i = 0; i < USER_SIZE; ++i)
 	{
-		if (!m_SessionPool[i]->PostAccept(m_ServerSocket))
+		if (!StartAcceptSession(m_SessionPool[i].get()))
 		{
-			printf("PostAccept error: %d\n", WSAGetLastError());
+			printf("StartAccept error: %d\n", WSAGetLastError());
 			Stop();
 			return false;
 		}
@@ -371,15 +353,16 @@ bool CIOCPManager::Run()
 
 void CIOCPManager::Stop()
 {
-	if (!m_IsRunning.exchange(false))
 	{
-		return;
-	}
-
-	if(m_ServerSocket != INVALID_SOCKET)
-	{
-		closesocket(m_ServerSocket);
-		m_ServerSocket = INVALID_SOCKET;
+		lock_guard<mutex> Lock(m_AcceptLock);
+		if (!m_IsRunning.exchange(false))
+		{
+			return;
+		}
+		if (m_ServerSocket != INVALID_SOCKET)
+		{
+			CancelIoEx(reinterpret_cast<HANDLE>(m_ServerSocket), nullptr);
+		}
 	}
 
 	for(shared_ptr<CSession>& session : m_SessionPool)
@@ -393,6 +376,12 @@ void CIOCPManager::Stop()
 	}
 
 	StopWorkerThreads();
+	// Completed accepts may still need SO_UPDATE_ACCEPT_CONTEXT while draining.
+	if (m_ServerSocket != INVALID_SOCKET)
+	{
+		closesocket(m_ServerSocket);
+		m_ServerSocket = INVALID_SOCKET;
+	}
 }
 
 bool CIOCPManager::SendPacket(PacketBuffer _Packet)

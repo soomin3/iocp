@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -38,12 +39,13 @@ private:
 	void WorkerThread(HANDLE _iocpHandle);
 	bool InitAcceptEx(SOCKET _ListenSocket);
 
-	bool ProcessCompletion(CSession* _Session, EIO_TYPE _IOType);
+	bool StartAcceptSession(CSession* _Session);
 	void TryRecycleSession(CSession* _Session);
 	void DisconnectSession(CSession* _Session);
 	void StopWorkerThreads();
 
 	SOCKET m_ServerSocket;
+	std::mutex m_AcceptLock;
 	HANDLE m_IOCPHandle;
 	bool m_WsaStarted;
 	vector<shared_ptr<CSession>> m_SessionPool;

@@ -47,6 +47,8 @@ CSession::CSession(const CPacketDispatcher& _PacketDispatcher, uint32_t _Session
 CSession::~CSession()
 {
 	assert(m_PendingIOCount.load() == 0);
+	assert(m_AcceptTask.IsDone());
+	m_AcceptTask.Reset();
 	assert(m_ReceiveTask.IsDone());
 	m_ReceiveTask.Reset();
 	assert(m_SendTask.IsDone() || m_SendWaiting);
@@ -100,6 +102,8 @@ void CSession::Disconnect()
 void CSession::Release()
 {
 	assert(m_PendingIOCount.load() == 0);
+	assert(m_AcceptTask.IsDone());
+	m_AcceptTask.Reset();
 	assert(m_ReceiveTask.IsDone());
 	m_ReceiveTask.Reset();
 	assert(m_SendTask.IsDone() || m_SendWaiting);
@@ -128,6 +132,8 @@ bool CSession::TryReset()
 
 	// Pending completions also pin every in-progress resume call, including the
 	// initial resume from ACCEPT. The final-suspended frame is now safe to destroy.
+	assert(m_AcceptTask.IsDone());
+	m_AcceptTask.Reset();
 	assert(m_ReceiveTask.IsDone());
 	m_ReceiveTask.Reset();
 
@@ -154,7 +160,7 @@ bool CSession::TryReset()
 	return true;
 }
 
-bool CSession::PostAccept(SOCKET _ListenSocket)
+bool CSession::StartAccept(SOCKET _ListenSocket, HANDLE _IOCPHandle)
 {
 	CCSLock Lock(&m_StateLock);
 
@@ -163,13 +169,61 @@ bool CSession::PostAccept(SOCKET _ListenSocket)
 		return false;
 	}
 
+	// Keep completion workers out until the first Resume has returned. Even an
+	// immediately completed AcceptEx must wait for its IOCP completion to resume.
+	assert(m_PendingIOCount.load() == 0);
+	m_AcceptTask = AcceptConnection(_ListenSocket, _IOCPHandle);
+	m_AcceptTask.Resume();
+	if (m_State == ESessionState::ACCEPTING) return true;
+
+	// An immediate submission failure has already finished the coroutine.
+	TryReset();
+	return false;
+}
+
+bool CSession::CompleteAccept(DWORD _Error)
+{
+	{
+		CCSLock Lock(&m_StateLock);
+		m_AcceptError = _Error;
+	}
+	// Failed/canceled ACCEPT completions also finish the suspended coroutine.
+	// Its pending count pins this resume and the initial send/receive resumes.
+	m_AcceptTask.Resume();
+	return GetState() == ESessionState::CONNECTED;
+}
+
+bool CSession::SAcceptAwaiter::await_suspend(std::coroutine_handle<>) const
+{
+	return Session.PostAccept(ListenSocket);
+}
+
+DWORD CSession::SAcceptAwaiter::await_resume() const noexcept
+{
+	return Session.m_AcceptError;
+}
+
+CIOTask CSession::AcceptConnection(SOCKET _ListenSocket, HANDLE _IOCPHandle)
+{
+	const DWORD Error = co_await SAcceptAwaiter{ *this, _ListenSocket };
+	if (Error != ERROR_SUCCESS || !InitializeAcceptedSocket(_ListenSocket, _IOCPHandle) ||
+		!StartSendLoop(_IOCPHandle) || !StartReceiveLoop())
+	{
+		Disconnect();
+	}
+}
+
+bool CSession::PostAccept(SOCKET _ListenSocket)
+{
+	CCSLock Lock(&m_StateLock);
+	m_AcceptError = ERROR_OPERATION_ABORTED;
 	m_State = ESessionState::ACCEPTING;
 
 	m_Socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	if (m_Socket == INVALID_SOCKET)
 	{
-		m_State = ESessionState::DISCONNECTED;
-		printf("WSASocket error: %d\n", WSAGetLastError());
+		m_AcceptError = WSAGetLastError();
+		printf("WSASocket error: %d\n", m_AcceptError);
 		return false;
 	}
 
@@ -185,12 +239,11 @@ bool CSession::PostAccept(SOCKET _ListenSocket)
 
 	if (Result == false)
 	{
-		if (WSAGetLastError() != WSA_IO_PENDING)
+		const DWORD Error = WSAGetLastError();
+		if (Error != WSA_IO_PENDING)
 		{
+			m_AcceptError = Error;
 			m_PendingIOCount.fetch_sub(1);
-			Release();
-			m_State = ESessionState::DISCONNECTED;
-			//Release();
 			return false;
 		}
 	}
@@ -290,12 +343,24 @@ bool CSession::PostRead(uint64_t _Generation)
 	return true;
 }
 
-bool CSession::CompleteAccept()
+bool CSession::InitializeAcceptedSocket(SOCKET _ListenSocket, HANDLE _IOCPHandle)
 {
 	CCSLock Lock(&m_StateLock);
 
 	if (m_State != ESessionState::ACCEPTING)
 	{
+		return false;
+	}
+
+	if (setsockopt(m_Socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
+		reinterpret_cast<const char*>(&_ListenSocket), sizeof(_ListenSocket)) != 0)
+	{
+		cout << "setsockopt error: " << WSAGetLastError() << '\n';
+		return false;
+	}
+	if (CreateIoCompletionPort(reinterpret_cast<HANDLE>(m_Socket), _IOCPHandle, 0, 0) == nullptr)
+	{
+		cout << "CreateIoCompletionPort error: " << GetLastError() << '\n';
 		return false;
 	}
 

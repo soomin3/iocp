@@ -59,10 +59,10 @@ public:
 	void Disconnect();
 	void Release();
 	bool TryReset();
-	bool PostAccept(SOCKET _ListenSocket);
+	bool StartAccept(SOCKET _ListenSocket, HANDLE _IOCPHandle);
+	bool CompleteAccept(DWORD _Error);
 	bool StartReceiveLoop();
 	bool CompleteRead(DWORD _TransferredBytes, DWORD _Error);
-	bool CompleteAccept();
 
 	bool Send(const void* _Data, size_t _Size, uint64_t _Generation);
 	bool StartSendLoop(HANDLE _IOCPHandle);
@@ -95,6 +95,15 @@ private:
 		DWORD Error = ERROR_OPERATION_ABORTED;
 	};
 
+	struct SAcceptAwaiter
+	{
+		CSession& Session;
+		SOCKET ListenSocket;
+		bool await_ready() const noexcept { return false; }
+		bool await_suspend(std::coroutine_handle<>) const;
+		DWORD await_resume() const noexcept;
+	};
+
 	struct SReceiveAwaiter
 	{
 		CSession& Session;
@@ -122,6 +131,9 @@ private:
 		SIOResult await_resume() const noexcept;
 	};
 
+	CIOTask AcceptConnection(SOCKET _ListenSocket, HANDLE _IOCPHandle);
+	bool PostAccept(SOCKET _ListenSocket);
+	bool InitializeAcceptedSocket(SOCKET _ListenSocket, HANDLE _IOCPHandle);
 	CIOTask ReceiveLoop(uint64_t _Generation);
 	bool PostRead(uint64_t _Generation);
 	CIOTask SendLoop(uint64_t _Generation);
@@ -141,6 +153,8 @@ private:
 	SMyOverlapped m_SendWakeOverlapped;
 
 	char m_AcceptBuffer[64];
+	DWORD m_AcceptError = ERROR_OPERATION_ABORTED;
+	CIOTask m_AcceptTask;
 	char m_ReadBuffer[READ_BUFFER_SIZE];
 
 	DWORD m_ReceivedBytes;
