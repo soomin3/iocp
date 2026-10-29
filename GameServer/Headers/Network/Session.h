@@ -57,6 +57,7 @@ public:
 
 	void Init();
 	void Disconnect();
+	bool Disconnect(uint64_t _Generation);
 	void Release();
 	bool TryReset();
 	bool StartAccept(SOCKET _ListenSocket, HANDLE _IOCPHandle);
@@ -78,6 +79,7 @@ public:
 	bool IsAuthenticated(const shared_ptr<CUser>& _User, uint64_t _Generation);
 	shared_ptr<CUser> GetUser();
 	shared_ptr<CUser> DetachUser();
+	shared_ptr<CUser> DetachUser(uint64_t _Generation);
 
 	bool TryBeginLogin(uint64_t _Generation);
 	bool IsLoginPending(uint64_t _Generation);

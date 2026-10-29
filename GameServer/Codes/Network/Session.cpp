@@ -99,6 +99,20 @@ void CSession::Disconnect()
 	}
 }
 
+bool CSession::Disconnect(uint64_t _Generation)
+{
+	CCSLock Lock(&m_StateLock);
+	if (m_Generation != _Generation ||
+		(m_State != ESessionState::CONNECTED && m_State != ESessionState::DISCONNECTING))
+	{
+		return false;
+	}
+
+	// A delayed DB response or broadcast must not close a recycled connection.
+	Disconnect();
+	return true;
+}
+
 void CSession::Release()
 {
 	assert(m_PendingIOCount.load() == 0);
@@ -687,6 +701,17 @@ shared_ptr<CUser> CSession::GetUser()
 shared_ptr<CUser> CSession::DetachUser()
 {
 	CCSLock Lock(&m_StateLock);
+
+	return move(m_User);
+}
+
+shared_ptr<CUser> CSession::DetachUser(uint64_t _Generation)
+{
+	CCSLock Lock(&m_StateLock);
+	if (m_Generation != _Generation)
+	{
+		return nullptr;
+	}
 
 	return move(m_User);
 }

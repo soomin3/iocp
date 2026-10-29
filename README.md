@@ -201,6 +201,7 @@ GameServer 시작 시 DBServer에 연결할 수 없으면 초기화에 실패합
 - 송신 큐는 partial send offset을 보존하며 최대 1 MiB로 제한합니다.
 - 로그인 DS 응답은 session ID, generation, pending 상태가 모두 일치할 때만 반영합니다.
 - 로그인 이후 DS 응답은 현재 User의 request ID와 일치할 때만 반영합니다.
+- 지연된 DB 응답·브로드캐스트의 종료 요청은 generation 확인과 종료를 같은 잠금 안에서 처리하여 재사용된 연결을 보호합니다.
 - 공유 컬렉션 잠금을 보유한 채 소켓 송신이나 파일 I/O를 수행하지 않습니다.
 - 종료 시 DB 통신을 중단하고 미완료 요청에 실패 응답을 게시한 뒤 IOCP를 종료합니다.
 

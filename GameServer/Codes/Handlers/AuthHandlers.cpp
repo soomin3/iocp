@@ -25,14 +25,12 @@ namespace
 
 	void DisconnectAuthenticatedSession(CSession& _Session, uint64_t _Generation, CUserManager& _UserManager)
 	{
-		if (_Session.GetGeneration() != _Generation)
+		if (!_Session.Disconnect(_Generation))
 		{
 			return;
 		}
 
-		_Session.Disconnect();
-
-		shared_ptr<CUser> DetachedUser = _Session.DetachUser();
+		shared_ptr<CUser> DetachedUser = _Session.DetachUser(_Generation);
 		if (DetachedUser)
 		{
 			_UserManager.RemoveUser(DetachedUser->GetAccountID(), DetachedUser);

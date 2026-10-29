@@ -89,10 +89,9 @@ EWorldChatResult CWorldChat::Broadcast(const shared_ptr<CUser>& _User, CSession&
 			continue;
 		}
 
-		if (!UserContext.Session->Send(&Packet, sizeof(Packet), UserContext.Generation) &&
-			UserContext.Session->GetGeneration() == UserContext.Generation)
+		if (!UserContext.Session->Send(&Packet, sizeof(Packet), UserContext.Generation))
 		{
-			UserContext.Session->Disconnect();
+			UserContext.Session->Disconnect(UserContext.Generation);
 		}
 	}
 
