@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{6D248B94-A797-4CD6-8CF5-C7C735496A68}</ProjectGuid>
+    <RootNamespace>LifetimeTests</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
+    <OutDir Condition="'$(EnableASAN)'=='true'">$(ProjectDir)..\$(Platform)\$(Configuration)ASan\</OutDir>
+    <IntDir Condition="'$(EnableASAN)'=='true'">$(ProjectDir)obj\$(Platform)\$(Configuration)ASan\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">_DEBUG;WIN32_LEAN_AND_MEAN;NOMINMAX;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;WIN32_LEAN_AND_MEAN;NOMINMAX;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\GameServer\Headers;$(ProjectDir)..\GameServer\Headers\Network;$(ProjectDir)..\GameServer\Headers\Function;$(ProjectDir)..\GameServer\Headers\Game;$(ProjectDir)..\GameServer\Headers\Handlers;$(ProjectDir)..\DBServer\Headers;$(ProjectDir)..\Common\Protocol;$(ProjectDir)..\Common\Network;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Optimization Condition="'$(Configuration)'=='Debug'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)'=='Release'">MaxSpeed</Optimization>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <BasicRuntimeChecks Condition="'$(EnableASAN)'=='true'">Default</BasicRuntimeChecks>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Ws2_32.lib;Mswsock.lib;Ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="Runner.cpp" />
+    <ClCompile Include="SessionLifetimeTests.cpp" />
+    <ClCompile Include="DBLifetimeTests.cpp" />
+    <ClCompile Include="GameServerTests.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Network\Session.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Network\PacketDispatcher.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Network\DBClient.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Network\IOCPManager.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Game\User.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Game\UserManager.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Game\WorldChat.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Game\ChatLogManager.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Handlers\AuthHandlers.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Handlers\ChatHandlers.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Function\TextEncoding.cpp" />
+    <ClCompile Include="..\GameServer\Codes\Function\TextValidation.cpp" />
+    <ClCompile Include="..\DBServer\Codes\DBServer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="TestSupport.h" />
+    <ClInclude Include="LifetimeCatalog.h" />
+    <None Include="README.md" />
+    <None Include="Run-All.ps1" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

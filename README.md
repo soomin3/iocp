@@ -63,7 +63,7 @@ TCP bytes
 
 ## 프로젝트 구조
 
-솔루션에는 실행 파일 프로젝트 4개가 있습니다.
+솔루션에는 서버·클라이언트 실행 프로젝트 4개와 검증용 실행 프로젝트 2개가 있습니다.
 
 ```text
 IOCPServer.slnx
@@ -71,12 +71,15 @@ IOCPServer.slnx
 ├─ LoginServer/   # 로그인 서버 분리용 실행 프로젝트
 ├─ DBServer/      # OLE DB 연결·프로시저 실행 전용 서버
 ├─ DummyClient/   # IOCP 부하·장애 테스트 클라이언트
+├─ LifetimeVerification/ # 서버 공통·게임 기능 테스트와 Windows 데스크톱 검증 UI
 └─ Common/        # 공통 패킷 계약과 서버 간 TCP 프레임 처리
 ```
 
 `GameServer`는 클라이언트 인증 상태·게임 로직과 DB 요청 큐를 담당하고, `DBServer`만 SQL Server에 접속합니다. 두 프로세스는 기존 SD/DS 패킷을 TCP로 교환합니다. `LoginServer`는 아직 최소 진입점이며 로그인 상태 처리는 `GameServer`에 남아 있습니다.
 
 `DummyClient`는 대량 접속, 실제 로그인·닉네임 생성, 주기적 채팅, RTT(avg/p95/p99), TPS·처리량, 강제 재접속, Connection Churn, 비정상 패킷 검증을 지원합니다. [빌드·시나리오·실행 방법](DummyClient/README.md)을 참고하세요. 5,000/10,000명 프리셋이 있지만 현재 `GameServer`의 세션 풀 한도는 100이므로 대규모 로그인 시험 전 서버 한도와 테스트 계정을 준비해야 합니다.
+
+`VerificationWorkbench`를 시작 프로젝트로 지정하면 **서버 공통 11개**(연결 종료·IOCP 완료·수명)와 **게임 서버 전용 6개**(로그인·닉네임·채팅·횟수 제한·지연 DB 응답·패킷 경계) 테스트를 함께 관리할 수 있습니다. 전체 또는 영역별로 선택·반복 실행하고 그룹별 결과와 로그를 확인합니다. 실제 서버 소스를 사용하는 `LifetimeTests`가 함께 빌드됩니다. 실제 루프백 IOCP와 모의 DB를 사용하며 SQL Server·OLE DB 실행은 포함하지 않습니다. [검증 시나리오·실행·감사 결과](LifetimeVerification/README.md)를 참고하세요.
 
 `GameServer` 내부 구성은 다음과 같습니다.
 

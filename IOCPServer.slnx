@@ -7,4 +7,6 @@
   <Project Path="DummyClient/DummyClient.vcxproj" Id="d75df673-7a98-448d-ae9a-0e5d247bbf6d" />
   <Project Path="GameServer/GameServer.vcxproj" Id="c1eb4d3f-9dc0-4c42-aa0f-9f55e446e50f" />
   <Project Path="LoginServer/LoginServer.vcxproj" Id="f013c243-ae7a-416d-9d85-f34e6943654e" />
+  <Project Path="LifetimeVerification/LifetimeTests.vcxproj" Id="6d248b94-a797-4cd6-8cf5-c7c735496a68" />
+  <Project Path="LifetimeVerification/Workbench/VerificationWorkbench.vcxproj" Id="a59a7e0c-2a8c-4443-a936-2b3e4bbbd673" />
 </Solution>

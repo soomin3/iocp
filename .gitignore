@@ -3,6 +3,7 @@
 [Rr]elease/
 x64/
 x86/
+Win32/
 [Bb]in/
 [Oo]bj/
 Concrete/
